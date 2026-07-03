@@ -26,6 +26,8 @@ pub fn run() {
             git::get_commit_detail,
             git::current_branch,
             git::ahead_behind,
+            git::list_remotes,
+            git::add_remote,
             git::fetch_all,
             git::pull,
             git::push,

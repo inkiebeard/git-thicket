@@ -51,6 +51,12 @@ pub struct StashEntry {
 }
 
 #[derive(Debug, Serialize)]
+pub struct RemoteInfo {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct WorkingFileEntry {
     pub path: String,
     pub old_path: Option<String>,
@@ -407,6 +413,37 @@ pub fn get_commit_detail(repo_path: String, sha: String) -> Result<CommitDetail,
 #[tauri::command]
 pub fn current_branch(repo_path: String) -> Result<String, String> {
     run_git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]).map(|s| s.trim().to_string())
+}
+
+#[tauri::command]
+pub fn list_remotes(repo_path: String) -> Result<Vec<RemoteInfo>, String> {
+    let output = run_git(&repo_path, &["remote", "-v"])?;
+    let mut seen = std::collections::HashSet::new();
+    let mut remotes = Vec::new();
+    for line in output.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let name = match parts.next() {
+            Some(n) if !n.is_empty() => n,
+            _ => continue,
+        };
+        let rest = match parts.next() {
+            Some(r) => r,
+            None => continue,
+        };
+        let url = rest.trim_end_matches(" (fetch)").trim_end_matches(" (push)");
+        if !url.is_empty() && seen.insert(name.to_string()) {
+            remotes.push(RemoteInfo {
+                name: name.to_string(),
+                url: url.to_string(),
+            });
+        }
+    }
+    Ok(remotes)
+}
+
+#[tauri::command]
+pub fn add_remote(repo_path: String, name: String, url: String) -> Result<String, String> {
+    run_git(&repo_path, &["remote", "add", &name, &url])
 }
 
 #[derive(Debug, Serialize)]

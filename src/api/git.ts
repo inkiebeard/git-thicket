@@ -165,6 +165,23 @@ export async function currentBranch(repoPath: string): Promise<string> {
   return invoke<string>("current_branch", { repoPath });
 }
 
+export interface RemoteInfo {
+  name: string;
+  url: string;
+}
+
+export async function listRemotes(repoPath: string): Promise<RemoteInfo[]> {
+  return invoke<RemoteInfo[]>("list_remotes", { repoPath });
+}
+
+export async function addRemote(
+  repoPath: string,
+  name: string,
+  url: string,
+): Promise<string> {
+  return invoke<string>("add_remote", { repoPath, name, url });
+}
+
 export interface AheadBehind {
   ahead: number;
   behind: number;
