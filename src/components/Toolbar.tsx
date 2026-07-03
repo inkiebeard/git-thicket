@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { stashList as fetchStashList, type StashEntry } from "../api/git";
 import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
+import { AddRemoteDialog } from "./AddRemoteDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { FetchIcon, PullIcon, PushIcon, RemoteIcon, StashIcon } from "./icons";
 
-function PushSplitButton() {
+function PushSplitButton({ hasRemote }: { hasRemote: boolean }) {
   const doPush = useRepoStore((s) => s.doPush);
   const busy = useActiveTab()?.busy ?? false;
+  const disabled = busy || !hasRemote;
   const [open, setOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState<"force" | "force-with-lease" | null>(
     null,
@@ -15,12 +18,18 @@ function PushSplitButton() {
 
   return (
     <div className="split-button" ref={ref}>
-      <button className="btn-toolbar" disabled={busy} onClick={() => doPush(null)}>
+      <button
+        className="btn-toolbar"
+        disabled={disabled}
+        onClick={() => doPush(null)}
+        title={hasRemote ? "Push" : "No remote configured"}
+      >
+        <PushIcon />
         Push
       </button>
       <button
         className="btn-toolbar btn-caret"
-        disabled={busy}
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         aria-label="Push options"
       >
@@ -69,7 +78,7 @@ function PushSplitButton() {
   );
 }
 
-function StashSplitButton() {
+function StashSplitButton({ hasChanges }: { hasChanges: boolean }) {
   const doStashPush = useRepoStore((s) => s.doStashPush);
   const doStashPop = useRepoStore((s) => s.doStashPop);
   const repoPath = useActiveTab()?.repoPath ?? null;
@@ -91,7 +100,13 @@ function StashSplitButton() {
 
   return (
     <div className="split-button" ref={ref}>
-      <button className="btn-toolbar" disabled={busy} onClick={() => doStashPush()}>
+      <button
+        className="btn-toolbar"
+        disabled={busy || !hasChanges}
+        onClick={() => doStashPush()}
+        title={hasChanges ? "Stash uncommitted changes" : "No uncommitted changes to stash"}
+      >
+        <StashIcon />
         Stash
       </button>
       <button
@@ -137,11 +152,74 @@ function StashSplitButton() {
   );
 }
 
+function RemoteSplitButton() {
+  const remotes = useActiveTab()?.remotes ?? [];
+  const busy = useActiveTab()?.busy ?? false;
+  const doAddRemote = useRepoStore((s) => s.doAddRemote);
+  const [open, setOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const ref = useClickOutside(() => setOpen(false));
+
+  return (
+    <div className="split-button" ref={ref}>
+      <button
+        className="btn-toolbar"
+        disabled={busy}
+        onClick={() => setDialogOpen(true)}
+        title="Add a remote"
+      >
+        <RemoteIcon />
+        {remotes.length === 0 ? "Add Remote" : remotes[0].name}
+      </button>
+      {remotes.length > 0 && (
+        <button
+          className="btn-toolbar btn-caret"
+          disabled={busy}
+          onClick={() => setOpen((o) => !o)}
+          aria-label="Remote options"
+        >
+          ▾
+        </button>
+      )}
+      {open && (
+        <div className="dropdown-menu">
+          {remotes.map((r) => (
+            <div key={r.name} className="dropdown-item-info" title={r.url}>
+              {r.name} — {r.url}
+            </div>
+          ))}
+          {remotes.length > 0 && <div className="dropdown-separator" />}
+          <button
+            className="dropdown-item"
+            onClick={() => {
+              setOpen(false);
+              setDialogOpen(true);
+            }}
+          >
+            Add remote…
+          </button>
+        </div>
+      )}
+      {dialogOpen && (
+        <AddRemoteDialog
+          onCancel={() => setDialogOpen(false)}
+          onConfirm={(name, url) => {
+            doAddRemote(name, url);
+            setDialogOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 export function Toolbar() {
   const activeTab = useActiveTab();
   const repoPath = activeTab?.repoPath ?? null;
   const branch = activeTab?.branch ?? null;
   const refs = activeTab?.refs ?? [];
+  const remotes = activeTab?.remotes ?? [];
+  const workingStatus = activeTab?.workingStatus ?? [];
   const aheadBehind = activeTab?.aheadBehind ?? null;
   const busy = activeTab?.busy ?? false;
   const toast = activeTab?.toast ?? null;
@@ -151,6 +229,10 @@ export function Toolbar() {
 
   const upstream = refs.find((r) => r.kind === "head")?.upstream ?? null;
   const diverged = aheadBehind && (aheadBehind.ahead > 0 || aheadBehind.behind > 0);
+  const hasRemote = remotes.length > 0;
+  const hasChanges = workingStatus.some(
+    (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
+  );
 
   useEffect(() => {
     if (!toast) return;
@@ -160,46 +242,69 @@ export function Toolbar() {
 
   return (
     <div className="toolbar">
-      {repoPath && (
-        <span className="toolbar-repo-path" title={repoPath}>
-          {repoPath}
-        </span>
-      )}
-      {branch && (
-        <span className="toolbar-branch">
-          {branch}
-          {diverged && (
-            <span
-              className="toolbar-ahead-behind"
-              title={`${aheadBehind.ahead} ahead, ${aheadBehind.behind} behind ${upstream}`}
-            >
-              {aheadBehind.ahead > 0 && (
-                <span className="toolbar-ahead">↑{aheadBehind.ahead}</span>
-              )}
-              {aheadBehind.behind > 0 && (
-                <span className="toolbar-behind">↓{aheadBehind.behind}</span>
-              )}
-            </span>
-          )}
-        </span>
-      )}
-      <button className="btn-toolbar" disabled={busy} onClick={doFetch}>
-        Fetch
-      </button>
-      <button className="btn-toolbar" disabled={busy} onClick={doPull}>
-        Pull
-      </button>
-      <PushSplitButton />
-      <StashSplitButton />
-      {busy && <span className="toolbar-busy">Working…</span>}
-      {toast && (
-        <span
-          className={`toolbar-toast toolbar-toast-${toast.kind}`}
-          onClick={dismissToast}
+      <div className="toolbar-info">
+        {repoPath && (
+          <span className="toolbar-repo-path" title={repoPath}>
+            {repoPath}
+          </span>
+        )}
+        {branch && (
+          <span className="toolbar-branch">
+            {branch}
+            {diverged && (
+              <span
+                className="toolbar-ahead-behind"
+                title={`${aheadBehind.ahead} ahead, ${aheadBehind.behind} behind ${upstream}`}
+              >
+                {aheadBehind.ahead > 0 && (
+                  <span className="toolbar-ahead">↑{aheadBehind.ahead}</span>
+                )}
+                {aheadBehind.behind > 0 && (
+                  <span className="toolbar-behind">↓{aheadBehind.behind}</span>
+                )}
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+      <div className="toolbar-actions">
+        {busy && <span className="toolbar-busy">Working…</span>}
+        {toast && (
+          <span
+            className={`toolbar-toast toolbar-toast-${toast.kind}`}
+            onClick={dismissToast}
+          >
+            {toast.text}
+          </span>
+        )}
+        <RemoteSplitButton />
+        <button
+          className="btn-toolbar"
+          disabled={busy || !hasRemote}
+          onClick={doFetch}
+          title={hasRemote ? "Fetch" : "No remote configured"}
         >
-          {toast.text}
-        </span>
-      )}
+          <FetchIcon />
+          Fetch
+        </button>
+        <button
+          className="btn-toolbar"
+          disabled={busy || !hasRemote || !upstream}
+          onClick={doPull}
+          title={
+            !hasRemote
+              ? "No remote configured"
+              : !upstream
+                ? "Current branch has no upstream to pull from"
+                : "Pull"
+          }
+        >
+          <PullIcon />
+          Pull
+        </button>
+        <PushSplitButton hasRemote={hasRemote} />
+        <StashSplitButton hasChanges={hasChanges} />
+      </div>
     </div>
   );
 }
