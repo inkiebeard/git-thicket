@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ModalOverlay } from "./ModalOverlay";
 
 interface AddRemoteDialogProps {
   onConfirm: (name: string, url: string) => void;
@@ -17,8 +18,8 @@ export function AddRemoteDialog({ onConfirm, onCancel }: AddRemoteDialogProps) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <ModalOverlay onClose={onCancel}>
+      <div className="modal">
         <div className="modal-title">Add remote</div>
         <label className="modal-label">
           Name
@@ -55,6 +56,6 @@ export function AddRemoteDialog({ onConfirm, onCancel }: AddRemoteDialogProps) {
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

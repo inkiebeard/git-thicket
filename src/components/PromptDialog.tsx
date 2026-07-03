@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ModalOverlay } from "./ModalOverlay";
 
 interface PromptDialogProps {
   title: string;
@@ -21,8 +22,8 @@ export function PromptDialog({
   const trimmed = value.trim();
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <ModalOverlay onClose={onCancel}>
+      <div className="modal">
         <div className="modal-title">{title}</div>
         <label className="modal-label">
           {label}
@@ -50,6 +51,6 @@ export function PromptDialog({
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

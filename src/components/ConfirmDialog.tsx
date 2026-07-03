@@ -1,3 +1,5 @@
+import { ModalOverlay } from "./ModalOverlay";
+
 interface ConfirmDialogProps {
   title: string;
   message: string;
@@ -16,8 +18,8 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <ModalOverlay onClose={onCancel}>
+      <div className="modal">
         <div className="modal-title">{title}</div>
         <div className="modal-message">{message}</div>
         <div className="modal-actions">
@@ -32,6 +34,6 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

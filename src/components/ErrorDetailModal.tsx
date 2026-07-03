@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Toast } from "../store/repoStore";
+import { ModalOverlay } from "./ModalOverlay";
 
 interface ErrorDetailModalProps {
   toast: Toast;
@@ -16,8 +17,8 @@ export function ErrorDetailModal({ toast, onClose }: ErrorDetailModalProps) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+    <ModalOverlay onClose={onClose}>
+      <div className="modal modal-wide">
         <div className="modal-title">{toast.action} failed</div>
         <pre className="modal-log">{toast.text}</pre>
         <div className="modal-actions">
@@ -29,6 +30,6 @@ export function ErrorDetailModal({ toast, onClose }: ErrorDetailModalProps) {
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

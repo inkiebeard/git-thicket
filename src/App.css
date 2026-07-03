@@ -576,6 +576,8 @@ body {
   color: var(--text-0);
   white-space: pre-wrap;
   word-break: break-word;
+  user-select: text;
+  cursor: text;
 }
 
 .btn-secondary {
