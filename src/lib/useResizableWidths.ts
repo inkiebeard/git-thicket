@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 
-const MIN_WIDTH = 160;
+const DEFAULT_MIN_WIDTH = 160;
 
-export function useResizableWidths(initial: number[], storageKey: string) {
+export function useResizableWidths(
+  initial: number[],
+  storageKey: string,
+  minWidth: number = DEFAULT_MIN_WIDTH,
+) {
   const [widths, setWidths] = useState<number[]>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) ?? "null");
@@ -20,7 +24,7 @@ export function useResizableWidths(initial: number[], storageKey: string) {
   function resize(index: number, deltaX: number) {
     setWidths((prev) => {
       const next = [...prev];
-      next[index] = Math.max(MIN_WIDTH, next[index] + deltaX);
+      next[index] = Math.max(minWidth, next[index] + deltaX);
       return next;
     });
   }
