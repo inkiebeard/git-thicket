@@ -722,6 +722,26 @@ pub fn unstage_path(repo_path: String, path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn stage_paths(repo_path: String, paths: Vec<String>) -> Result<String, String> {
+    if paths.is_empty() {
+        return Ok(String::new());
+    }
+    let mut args: Vec<&str> = vec!["add", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    run_git(&repo_path, &args)
+}
+
+#[tauri::command]
+pub fn unstage_paths(repo_path: String, paths: Vec<String>) -> Result<String, String> {
+    if paths.is_empty() {
+        return Ok(String::new());
+    }
+    let mut args: Vec<&str> = vec!["restore", "--staged", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    run_git(&repo_path, &args)
+}
+
+#[tauri::command]
 pub fn stage_all(repo_path: String) -> Result<String, String> {
     run_git(&repo_path, &["add", "-A"])
 }
@@ -732,8 +752,12 @@ pub fn unstage_all(repo_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn commit(repo_path: String, message: String) -> Result<String, String> {
-    run_git(&repo_path, &["commit", "-m", &message])
+pub fn commit(repo_path: String, message: String, amend: bool) -> Result<String, String> {
+    if amend {
+        run_git(&repo_path, &["commit", "--amend", "-m", &message])
+    } else {
+        run_git(&repo_path, &["commit", "-m", &message])
+    }
 }
 
 /// `staged` selects `diff --cached`; for unstaged changes, `untracked` picks

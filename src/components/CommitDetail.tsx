@@ -42,13 +42,16 @@ function formatFullDate(iso: string): string {
 function CommitComposer() {
   const activeTab = useActiveTab();
   const message = activeTab?.commitMessage ?? "";
+  const amend = activeTab?.amend ?? false;
   const workingStatus = activeTab?.workingStatus ?? [];
   const busy = activeTab?.busy ?? false;
   const setCommitMessage = useRepoStore((s) => s.setCommitMessage);
+  const setAmend = useRepoStore((s) => s.setAmend);
   const commitStagedChanges = useRepoStore((s) => s.commitStagedChanges);
 
   const stagedCount = workingStatus.filter((f) => f.indexStatus !== "none").length;
-  const canCommit = stagedCount > 0 && message.trim().length > 0 && !busy;
+  // Amending doesn't require anything staged — a message-only amend is valid.
+  const canCommit = (amend || stagedCount > 0) && message.trim().length > 0 && !busy;
 
   return (
     <div className="commit-detail commit-composer">
@@ -59,18 +62,30 @@ function CommitComposer() {
         value={message}
         onChange={(e) => setCommitMessage(e.target.value)}
       />
+      <label className="commit-composer-amend">
+        <input
+          type="checkbox"
+          checked={amend}
+          onChange={(e) => setAmend(e.target.checked)}
+        />
+        Amend previous commit
+      </label>
       <div className="commit-composer-actions">
         <span className="commit-composer-hint">
-          {stagedCount === 0
-            ? "No files staged"
-            : `${stagedCount} file${stagedCount === 1 ? "" : "s"} staged`}
+          {amend
+            ? stagedCount > 0
+              ? `Amending — ${stagedCount} file${stagedCount === 1 ? "" : "s"} staged`
+              : "Amending — message only"
+            : stagedCount === 0
+              ? "No files staged"
+              : `${stagedCount} file${stagedCount === 1 ? "" : "s"} staged`}
         </span>
         <button
           className="btn-primary"
           disabled={!canCommit}
           onClick={() => commitStagedChanges()}
         >
-          Commit
+          {amend ? "Amend" : "Commit"}
         </button>
       </div>
     </div>

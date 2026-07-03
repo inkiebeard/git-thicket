@@ -32,10 +32,12 @@ import {
   revertCommit,
   stageAll,
   stagePath,
+  stagePaths,
   stashPop,
   stashPush,
   unstageAll,
   unstagePath,
+  unstagePaths,
 } from "../api/git";
 
 export interface Toast {
@@ -67,6 +69,7 @@ export interface RepoTab {
   viewingWorkingTree: boolean;
   selectedFileStaged: boolean;
   commitMessage: string;
+  amend: boolean;
 
   busy: boolean;
   toast: Toast | null;
@@ -93,6 +96,7 @@ function makeTab(repoPath: string): RepoTab {
     viewingWorkingTree: false,
     selectedFileStaged: false,
     commitMessage: "",
+    amend: false,
     busy: false,
     toast: null,
   };
@@ -115,8 +119,11 @@ interface RepoState {
   selectWorkingTree: () => void;
   selectWorkingFile: (path: string, staged: boolean) => void;
   setCommitMessage: (message: string) => void;
+  setAmend: (amend: boolean) => void;
   stageFile: (path: string) => Promise<void>;
   unstageFile: (path: string) => Promise<void>;
+  stageFiles: (paths: string[]) => Promise<void>;
+  unstageFiles: (paths: string[]) => Promise<void>;
   stageAllFiles: () => Promise<void>;
   unstageAllFiles: () => Promise<void>;
   commitStagedChanges: () => Promise<void>;
@@ -392,6 +399,26 @@ export const useRepoStore = create<RepoState>((set, get) => {
       updateTab(activeRepoPath, { commitMessage: message });
     },
 
+    setAmend: (amend: boolean) => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+      updateTab(activeRepoPath, { amend });
+      if (!amend) return;
+      // Pre-fill with the previous commit's message, like `git commit
+      // --amend` does — but don't clobber anything the user already typed.
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (tab?.commitMessage.trim()) return;
+      getCommitDetail(activeRepoPath, "HEAD")
+        .then((detail) => {
+          const message = detail.body ? `${detail.subject}\n\n${detail.body}` : detail.subject;
+          updateTab(activeRepoPath, { commitMessage: message });
+        })
+        .catch(() => {
+          // No previous commit to amend, or the fetch failed — leave the
+          // message blank; the commit itself will surface a clear error.
+        });
+    },
+
     stageFile: async (path: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
@@ -402,6 +429,18 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runQuiet(activeRepoPath, () => unstagePath(activeRepoPath, path));
+    },
+
+    stageFiles: async (paths: string[]) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath || paths.length === 0) return;
+      await runQuiet(activeRepoPath, () => stagePaths(activeRepoPath, paths));
+    },
+
+    unstageFiles: async (paths: string[]) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath || paths.length === 0) return;
+      await runQuiet(activeRepoPath, () => unstagePaths(activeRepoPath, paths));
     },
 
     stageAllFiles: async () => {
@@ -419,10 +458,14 @@ export const useRepoStore = create<RepoState>((set, get) => {
     commitStagedChanges: async () => {
       const { activeRepoPath, tabs } = get();
       if (!activeRepoPath) return;
-      const message = tabs.find((t) => t.repoPath === activeRepoPath)?.commitMessage.trim();
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      const message = tab?.commitMessage.trim();
       if (!message) return;
-      const ok = await runAction(activeRepoPath, () => commitChanges(activeRepoPath, message));
-      if (ok) updateTab(activeRepoPath, { commitMessage: "" });
+      const amend = tab?.amend ?? false;
+      const ok = await runAction(activeRepoPath, () =>
+        commitChanges(activeRepoPath, message, amend),
+      );
+      if (ok) updateTab(activeRepoPath, { commitMessage: "", amend: false });
     },
 
     doFetch: async () => {

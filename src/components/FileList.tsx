@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { FileChange, FileStatus, WorkingFileEntry } from "../api/git";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 
@@ -51,17 +52,21 @@ function FileRow({ file }: { file: FileChange }) {
 function WorkingFileRow({
   entry,
   staged,
+  isMultiSelected,
+  onSelect,
+  onToggleStage,
 }: {
   entry: WorkingFileEntry;
   staged: boolean;
+  isMultiSelected: boolean;
+  onSelect: (e: React.MouseEvent) => void;
+  onToggleStage: () => void;
 }) {
   const activeTab = useActiveTab();
   const selectedFilePath = activeTab?.selectedFilePath ?? null;
   const selectedFileStaged = activeTab?.selectedFileStaged ?? false;
-  const selectWorkingFile = useRepoStore((s) => s.selectWorkingFile);
-  const stageFile = useRepoStore((s) => s.stageFile);
-  const unstageFile = useRepoStore((s) => s.unstageFile);
-  const isSelected = entry.path === selectedFilePath && staged === selectedFileStaged;
+  const isSelected =
+    isMultiSelected || (entry.path === selectedFilePath && staged === selectedFileStaged);
   const status = staged ? entry.indexStatus : entry.worktreeStatus;
   const insertions = staged ? entry.indexInsertions : entry.worktreeInsertions;
   const deletions = staged ? entry.indexDeletions : entry.worktreeDeletions;
@@ -69,7 +74,7 @@ function WorkingFileRow({
   return (
     <button
       className={`file-row${isSelected ? " selected" : ""}`}
-      onClick={() => selectWorkingFile(entry.path, staged)}
+      onClick={onSelect}
       title={entry.oldPath ? `${entry.oldPath} → ${entry.path}` : entry.path}
     >
       <StatusBadge status={status} />
@@ -83,8 +88,7 @@ function WorkingFileRow({
         title={staged ? "Unstage" : "Stage"}
         onClick={(e) => {
           e.stopPropagation();
-          if (staged) unstageFile(entry.path);
-          else stageFile(entry.path);
+          onToggleStage();
         }}
       >
         {staged ? "−" : "+"}
@@ -93,18 +97,87 @@ function WorkingFileRow({
   );
 }
 
+interface MultiSelect {
+  staged: boolean;
+  paths: Set<string>;
+  anchor: string | null;
+}
+
+const EMPTY_MULTI_SELECT: MultiSelect = { staged: false, paths: new Set(), anchor: null };
+
 function WorkingFileList() {
   const activeTab = useActiveTab();
   const workingStatus = activeTab?.workingStatus ?? [];
   const stageAllFiles = useRepoStore((s) => s.stageAllFiles);
   const unstageAllFiles = useRepoStore((s) => s.unstageAllFiles);
+  const stageFile = useRepoStore((s) => s.stageFile);
+  const unstageFile = useRepoStore((s) => s.unstageFile);
+  const stageFiles = useRepoStore((s) => s.stageFiles);
+  const unstageFiles = useRepoStore((s) => s.unstageFiles);
+  const selectWorkingFile = useRepoStore((s) => s.selectWorkingFile);
+
+  const [multi, setMulti] = useState<MultiSelect>(EMPTY_MULTI_SELECT);
 
   const staged = workingStatus.filter((f) => f.indexStatus !== "none");
   const unstaged = workingStatus.filter((f) => f.worktreeStatus !== "none");
+  const stagedPaths = staged.map((f) => f.path);
+  const unstagedPaths = unstaged.map((f) => f.path);
 
   if (staged.length === 0 && unstaged.length === 0) {
     return <div className="empty-state">No uncommitted changes</div>;
   }
+
+  // Shift extends/replaces the selection with the range between the anchor
+  // (the last plain click) and this row, within the same section — staged
+  // and unstaged are different git operations, so a range can't cross them.
+  // Ctrl/Cmd toggles just this row in or out of the current selection. A
+  // plain click resets to just this row and moves the anchor here.
+  function handleSelect(path: string, isStaged: boolean, orderedPaths: string[]) {
+    return (e: React.MouseEvent) => {
+      if (e.shiftKey && multi.anchor && multi.staged === isStaged) {
+        const anchorIdx = orderedPaths.indexOf(multi.anchor);
+        const targetIdx = orderedPaths.indexOf(path);
+        if (anchorIdx !== -1 && targetIdx !== -1) {
+          const [start, end] =
+            anchorIdx < targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx];
+          setMulti({
+            staged: isStaged,
+            paths: new Set(orderedPaths.slice(start, end + 1)),
+            anchor: multi.anchor,
+          });
+        }
+      } else if ((e.ctrlKey || e.metaKey) && multi.staged === isStaged) {
+        setMulti((prev) => {
+          const next = new Set(prev.paths);
+          if (next.has(path)) next.delete(path);
+          else next.add(path);
+          return { staged: isStaged, paths: next, anchor: path };
+        });
+      } else {
+        setMulti({ staged: isStaged, paths: new Set([path]), anchor: path });
+      }
+      selectWorkingFile(path, isStaged);
+    };
+  }
+
+  function handleToggleStage(path: string, isStaged: boolean) {
+    return () => {
+      const inSelection =
+        multi.staged === isStaged && multi.paths.has(path) && multi.paths.size > 1;
+      const paths = inSelection ? [...multi.paths] : [path];
+      if (isStaged) {
+        if (paths.length > 1) unstageFiles(paths);
+        else unstageFile(path);
+      } else {
+        if (paths.length > 1) stageFiles(paths);
+        else stageFile(path);
+      }
+      if (inSelection) setMulti(EMPTY_MULTI_SELECT);
+    };
+  }
+
+  const stagedSelection = multi.staged === true && multi.paths.size > 1 ? multi.paths : null;
+  const unstagedSelection = multi.staged === false && multi.paths.size > 1 ? multi.paths : null;
 
   return (
     <div className="file-list working-file-list">
@@ -112,8 +185,18 @@ function WorkingFileList() {
         <div className="file-list-section-header">
           <span>Staged ({staged.length})</span>
           {staged.length > 0 && (
-            <button className="file-list-section-action" onClick={() => unstageAllFiles()}>
-              Unstage all
+            <button
+              className="file-list-section-action"
+              onClick={() => {
+                if (stagedSelection) {
+                  unstageFiles([...stagedSelection]);
+                  setMulti(EMPTY_MULTI_SELECT);
+                } else {
+                  unstageAllFiles();
+                }
+              }}
+            >
+              {stagedSelection ? `Unstage selected (${stagedSelection.size})` : "Unstage all"}
             </button>
           )}
         </div>
@@ -121,7 +204,16 @@ function WorkingFileList() {
           {staged.length === 0 ? (
             <span className="file-list-section-empty">Nothing staged</span>
           ) : (
-            staged.map((f) => <WorkingFileRow key={`s-${f.path}`} entry={f} staged />)
+            staged.map((f) => (
+              <WorkingFileRow
+                key={`s-${f.path}`}
+                entry={f}
+                staged
+                isMultiSelected={multi.staged === true && multi.paths.size > 1 && multi.paths.has(f.path)}
+                onSelect={handleSelect(f.path, true, stagedPaths)}
+                onToggleStage={handleToggleStage(f.path, true)}
+              />
+            ))
           )}
         </div>
       </div>
@@ -129,8 +221,18 @@ function WorkingFileList() {
         <div className="file-list-section-header">
           <span>Changes ({unstaged.length})</span>
           {unstaged.length > 0 && (
-            <button className="file-list-section-action" onClick={() => stageAllFiles()}>
-              Stage all
+            <button
+              className="file-list-section-action"
+              onClick={() => {
+                if (unstagedSelection) {
+                  stageFiles([...unstagedSelection]);
+                  setMulti(EMPTY_MULTI_SELECT);
+                } else {
+                  stageAllFiles();
+                }
+              }}
+            >
+              {unstagedSelection ? `Stage selected (${unstagedSelection.size})` : "Stage all"}
             </button>
           )}
         </div>
@@ -139,7 +241,14 @@ function WorkingFileList() {
             <span className="file-list-section-empty">Nothing unstaged</span>
           ) : (
             unstaged.map((f) => (
-              <WorkingFileRow key={`u-${f.path}`} entry={f} staged={false} />
+              <WorkingFileRow
+                key={`u-${f.path}`}
+                entry={f}
+                staged={false}
+                isMultiSelected={multi.staged === false && multi.paths.size > 1 && multi.paths.has(f.path)}
+                onSelect={handleSelect(f.path, false, unstagedPaths)}
+                onToggleStage={handleToggleStage(f.path, false)}
+              />
             ))
           )}
         </div>

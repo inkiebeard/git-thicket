@@ -44,6 +44,8 @@ pub fn run() {
             git::git_status,
             git::stage_path,
             git::unstage_path,
+            git::stage_paths,
+            git::unstage_paths,
             git::stage_all,
             git::unstage_all,
             git::commit,

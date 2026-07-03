@@ -323,6 +323,14 @@ export async function unstagePath(repoPath: string, path: string): Promise<strin
   return invoke<string>("unstage_path", { repoPath, path });
 }
 
+export async function stagePaths(repoPath: string, paths: string[]): Promise<string> {
+  return invoke<string>("stage_paths", { repoPath, paths });
+}
+
+export async function unstagePaths(repoPath: string, paths: string[]): Promise<string> {
+  return invoke<string>("unstage_paths", { repoPath, paths });
+}
+
 export async function stageAll(repoPath: string): Promise<string> {
   return invoke<string>("stage_all", { repoPath });
 }
@@ -331,8 +339,12 @@ export async function unstageAll(repoPath: string): Promise<string> {
   return invoke<string>("unstage_all", { repoPath });
 }
 
-export async function commitChanges(repoPath: string, message: string): Promise<string> {
-  return invoke<string>("commit", { repoPath, message });
+export async function commitChanges(
+  repoPath: string,
+  message: string,
+  amend = false,
+): Promise<string> {
+  return invoke<string>("commit", { repoPath, message, amend });
 }
 
 export async function getWorkingFileDiff(
