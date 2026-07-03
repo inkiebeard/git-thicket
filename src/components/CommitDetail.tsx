@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useActiveTab } from "../store/repoStore";
+import { useActiveTab, useRepoStore } from "../store/repoStore";
 
 const CO_AUTHOR_RE = /^co-authored-by:\s*(.+?)\s*<(.+?)>\s*$/i;
 
@@ -39,16 +39,58 @@ function formatFullDate(iso: string): string {
   });
 }
 
+function CommitComposer() {
+  const activeTab = useActiveTab();
+  const message = activeTab?.commitMessage ?? "";
+  const workingStatus = activeTab?.workingStatus ?? [];
+  const busy = activeTab?.busy ?? false;
+  const setCommitMessage = useRepoStore((s) => s.setCommitMessage);
+  const commitStagedChanges = useRepoStore((s) => s.commitStagedChanges);
+
+  const stagedCount = workingStatus.filter((f) => f.indexStatus !== "none").length;
+  const canCommit = stagedCount > 0 && message.trim().length > 0 && !busy;
+
+  return (
+    <div className="commit-detail commit-composer">
+      <textarea
+        className="commit-composer-input"
+        placeholder="Commit message"
+        rows={3}
+        value={message}
+        onChange={(e) => setCommitMessage(e.target.value)}
+      />
+      <div className="commit-composer-actions">
+        <span className="commit-composer-hint">
+          {stagedCount === 0
+            ? "No files staged"
+            : `${stagedCount} file${stagedCount === 1 ? "" : "s"} staged`}
+        </span>
+        <button
+          className="btn-primary"
+          disabled={!canCommit}
+          onClick={() => commitStagedChanges()}
+        >
+          Commit
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function CommitDetail() {
   const activeTab = useActiveTab();
   const detail = activeTab?.commitDetail ?? null;
   const loading = activeTab?.loadingDetail ?? false;
+  const viewingWorkingTree = activeTab?.viewingWorkingTree ?? false;
 
   const parsed = useMemo(
     () => (detail ? parseBody(detail.body) : null),
     [detail],
   );
 
+  if (viewingWorkingTree) {
+    return <CommitComposer />;
+  }
   if (loading) {
     return <div className="commit-detail commit-detail-loading">Loading commit…</div>;
   }

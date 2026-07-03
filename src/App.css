@@ -558,10 +558,26 @@ body {
   flex-shrink: 0;
 }
 
+/* Refs get their own dedicated column, positioned before the graph — kept
+   separate from the Message column so a commit with several branch/tag
+   badges doesn't push the message text (and everything after it) out of
+   alignment with rows that have none. */
+.commit-refs-cell {
+  display: flex;
+  align-items: center;
+  /* Right-align so badges sit next to the graph/commit dots rather than
+     pinned to the window edge, which reads as detached from the row. */
+  justify-content: flex-end;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
 .commit-refs {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
-  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .ref-badge {
@@ -616,7 +632,6 @@ body {
 
 .commit-author {
   color: var(--text-2);
-  width: 110px;
   flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -625,61 +640,280 @@ body {
 
 .commit-date {
   color: var(--text-2);
-  width: 80px;
   flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .commit-hash {
   color: var(--text-2);
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-  width: 60px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commit-changes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.commit-changes-add {
+  color: var(--success);
+}
+
+.commit-changes-del {
+  color: var(--danger);
+}
+
+/* Ghost row: uncommitted changes rendered as a dashed commit at the tip of
+   the current branch, rather than a disconnected pinned bar. */
+
+.commit-row-ghost {
+  font-style: italic;
+}
+
+.commit-ghost-label {
+  color: var(--text-1) !important;
+}
+
+.commit-ghost-count {
+  color: var(--text-1) !important;
+  font-style: normal;
+}
+
+/* Commit list header (resizable columns) */
+
+.commit-list-header {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  height: 26px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.commit-list-header-cell-wrap {
+  display: flex;
+  align-items: stretch;
   flex-shrink: 0;
 }
 
-/* File list: a horizontal, wrapping strip of chips above the diff view so
-   the diff itself keeps most of the vertical space. */
+.commit-list-header-cell {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  padding: 0 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+}
+
+.commit-list-header-cell-wrap.dragging {
+  opacity: 0.4;
+}
+
+.commit-list-header-cell-fixed {
+  cursor: default;
+  justify-content: flex-end;
+}
+
+/* File list: a vertical list of rows above the diff view (the convention
+   most git GUIs use), scrollable within a fixed strip so the diff itself
+   keeps most of the vertical space. */
 
 .file-list {
   display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  gap: 6px;
-  padding: 8px 10px;
-  max-height: 140px;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  max-height: 160px;
   overflow-y: auto;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
-.file-chip {
+.file-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px 3px 3px;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
   cursor: pointer;
   font-size: 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  background: none;
+  border: none;
+  border-radius: 4px;
   color: var(--text-1);
-  max-width: 320px;
+  text-align: left;
 }
 
-.file-chip:hover {
-  border-color: var(--accent);
+.file-row:hover {
+  background: var(--bg-2);
   color: var(--text-0);
 }
 
-.file-chip.selected {
+.file-row.selected {
   background: var(--bg-3);
-  border-color: var(--accent);
   color: var(--text-0);
 }
 
-.file-chip-path {
+.file-row-path {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A small gap after the (already-truncating) path so the counts read as a
+   distinct trailing detail rather than crowding right up against the name. */
+.file-row-changes {
+  display: flex;
+  gap: 6px;
+  margin-left: 8px;
+  flex-shrink: 0;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+
+.file-row-changes-add {
+  color: var(--success);
+}
+
+.file-row-changes-del {
+  color: var(--danger);
+}
+
+.file-row-stage-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  color: var(--text-2);
+  font-weight: 700;
+}
+
+.file-row-stage-toggle:hover {
+  background: var(--bg-0);
+  color: var(--text-0);
+}
+
+/* Working tree file list: two vertically stacked, labeled sections (staged
+   / unstaged), each a vertical list with a bulk stage/unstage action. */
+
+.working-file-list {
+  gap: 12px;
+  max-height: 260px;
+}
+
+.file-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-list-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  padding: 0 8px;
+  margin-bottom: 2px;
+}
+
+.file-list-section-action {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 11px;
+  text-transform: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.file-list-section-action:hover {
+  text-decoration: underline;
+}
+
+.file-list-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.file-list-section-empty {
+  color: var(--text-2);
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.status-untracked {
+  background: #1e3324;
+  color: var(--success);
+}
+
+.status-unmerged {
+  background: #3a2226;
+  color: var(--danger);
+}
+
+/* Commit composer (uncommitted-changes view) */
+
+.commit-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.commit-composer-input {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text-0);
+  font-family: inherit;
+  resize: vertical;
+}
+
+.commit-composer-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.commit-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.commit-composer-hint {
+  font-size: 11px;
+  color: var(--text-2);
 }
 
 /* Commit detail */

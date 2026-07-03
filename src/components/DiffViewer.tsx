@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getFileDiff } from "../api/git";
+import { getFileDiff, getWorkingFileDiff } from "../api/git";
 import {
   parseDiff,
   toSplitRows,
@@ -66,6 +66,9 @@ export function DiffViewer() {
   const repoPath = activeTab?.repoPath ?? null;
   const selectedSha = activeTab?.selectedSha ?? null;
   const selectedFilePath = activeTab?.selectedFilePath ?? null;
+  const viewingWorkingTree = activeTab?.viewingWorkingTree ?? false;
+  const selectedFileStaged = activeTab?.selectedFileStaged ?? false;
+  const workingStatus = activeTab?.workingStatus ?? [];
 
   const [hunks, setHunks] = useState<DiffHunk[]>([]);
   const [isBinary, setIsBinary] = useState(false);
@@ -79,7 +82,11 @@ export function DiffViewer() {
   }, [viewMode]);
 
   useEffect(() => {
-    if (!repoPath || !selectedSha || !selectedFilePath) {
+    if (!repoPath || !selectedFilePath) {
+      setHunks([]);
+      return;
+    }
+    if (!viewingWorkingTree && !selectedSha) {
       setHunks([]);
       return;
     }
@@ -87,7 +94,19 @@ export function DiffViewer() {
     setLoading(true);
     setError(null);
     setCollapsed(new Set());
-    getFileDiff(repoPath, selectedSha, selectedFilePath)
+
+    const diffPromise = viewingWorkingTree
+      ? getWorkingFileDiff(
+          repoPath,
+          selectedFilePath,
+          selectedFileStaged,
+          !selectedFileStaged &&
+            workingStatus.find((f) => f.path === selectedFilePath)?.worktreeStatus ===
+              "untracked",
+        )
+      : getFileDiff(repoPath, selectedSha as string, selectedFilePath);
+
+    diffPromise
       .then((raw) => {
         if (cancelled) return;
         const parsed = parseDiff(raw);
@@ -99,7 +118,8 @@ export function DiffViewer() {
     return () => {
       cancelled = true;
     };
-  }, [repoPath, selectedSha, selectedFilePath]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoPath, selectedSha, selectedFilePath, viewingWorkingTree, selectedFileStaged]);
 
   if (!selectedFilePath) {
     return <div className="empty-state">Select a file to view its diff</div>;
