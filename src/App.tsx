@@ -37,7 +37,7 @@ function App() {
             className="pane pane-commits"
             style={hasSelection ? { width: widths[0] } : { flex: 1 }}
           >
-            <CommitGraph />
+            <CommitGraph key={activeTab.repoPath} />
           </section>
           {hasSelection && (
             <>

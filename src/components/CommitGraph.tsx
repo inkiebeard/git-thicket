@@ -277,14 +277,20 @@ export function CommitGraph() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dragKey, setDragKey] = useState<ColumnKey | null>(null);
 
+  const repoPath = activeTab?.repoPath ?? "";
+
+  // Column order is a personal reading-order preference shared across
+  // repos; widths are repo-specific (different repos have very different
+  // message/author/path lengths) — CommitGraph is remounted (via `key` in
+  // App.tsx) on repo switch so these lazy-init from the new repo's storage.
   const { order, moveColumn } = useColumnOrder(DEFAULT_COLUMN_ORDER, "thicket:commitColOrder");
   const { widths: colWidths, resize: resizeCol } = useColumnWidths(
     DEFAULT_COLUMN_WIDTHS,
-    "thicket:commitColWidths2",
+    `thicket:commitColWidths2:${repoPath}`,
   );
   const { widths: refsWidths, resize: resizeRefsCol } = useResizableWidths(
     [REFS_COLUMN_INITIAL_WIDTH],
-    "thicket:commitRefsColWidth",
+    `thicket:commitRefsColWidth:${repoPath}`,
     60,
   );
   const refsWidth = refsWidths[0];
