@@ -132,6 +132,45 @@ body {
   color: var(--text-0);
 }
 
+/* Add-repo control: a small "+" at the end of the tab bar instead of a
+   permanent giant primary button in the top-level header. */
+
+.add-repo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tab-add {
+  background: none;
+  border: none;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 12px;
+  align-self: stretch;
+}
+
+.tab-add:hover {
+  background: var(--bg-1);
+  color: var(--text-0);
+}
+
+.repo-error-floating {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 6px 10px;
+  white-space: nowrap;
+  z-index: 30;
+}
+
 .app-body {
   display: flex;
   flex: 1;
@@ -145,11 +184,37 @@ body {
 }
 
 .pane-right {
+  position: relative;
   flex: 1;
   min-width: 260px;
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.pane-right-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pane-right-close:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+  border-color: var(--accent);
 }
 
 .pane-diff {
@@ -189,15 +254,6 @@ body {
   white-space: pre-wrap;
 }
 
-/* Repo picker */
-
-.repo-picker {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  position: relative;
-}
-
 .btn-primary {
   background: var(--accent);
   color: #0c0f14;
@@ -219,19 +275,6 @@ body {
   filter: none;
 }
 
-.btn-primary.btn-caret {
-  padding: 6px 8px;
-}
-
-.repo-path {
-  font-size: 12px;
-  color: var(--text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 420px;
-}
-
 .repo-error {
   font-size: 12px;
   color: var(--danger);
@@ -244,6 +287,17 @@ body {
   padding: 4px 8px;
 }
 
+.dropdown-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+.dropdown-item-highlight {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Toolbar */
 
 .toolbar {
@@ -254,6 +308,16 @@ body {
   min-width: 0;
 }
 
+.toolbar-repo-path {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 420px;
+  margin-right: 4px;
+}
+
 .toolbar-branch {
   font-size: 12px;
   color: var(--text-1);
@@ -262,6 +326,24 @@ body {
   border-radius: 10px;
   margin-right: 4px;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-ahead-behind {
+  display: flex;
+  gap: 4px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+
+.toolbar-ahead {
+  color: var(--success);
+}
+
+.toolbar-behind {
+  color: var(--danger);
 }
 
 .btn-toolbar {

@@ -139,12 +139,18 @@ function StashSplitButton() {
 
 export function Toolbar() {
   const activeTab = useActiveTab();
+  const repoPath = activeTab?.repoPath ?? null;
   const branch = activeTab?.branch ?? null;
+  const refs = activeTab?.refs ?? [];
+  const aheadBehind = activeTab?.aheadBehind ?? null;
   const busy = activeTab?.busy ?? false;
   const toast = activeTab?.toast ?? null;
   const doFetch = useRepoStore((s) => s.doFetch);
   const doPull = useRepoStore((s) => s.doPull);
   const dismissToast = useRepoStore((s) => s.dismissToast);
+
+  const upstream = refs.find((r) => r.kind === "head")?.upstream ?? null;
+  const diverged = aheadBehind && (aheadBehind.ahead > 0 || aheadBehind.behind > 0);
 
   useEffect(() => {
     if (!toast) return;
@@ -154,7 +160,29 @@ export function Toolbar() {
 
   return (
     <div className="toolbar">
-      {branch && <span className="toolbar-branch">{branch}</span>}
+      {repoPath && (
+        <span className="toolbar-repo-path" title={repoPath}>
+          {repoPath}
+        </span>
+      )}
+      {branch && (
+        <span className="toolbar-branch">
+          {branch}
+          {diverged && (
+            <span
+              className="toolbar-ahead-behind"
+              title={`${aheadBehind.ahead} ahead, ${aheadBehind.behind} behind ${upstream}`}
+            >
+              {aheadBehind.ahead > 0 && (
+                <span className="toolbar-ahead">↑{aheadBehind.ahead}</span>
+              )}
+              {aheadBehind.behind > 0 && (
+                <span className="toolbar-behind">↓{aheadBehind.behind}</span>
+              )}
+            </span>
+          )}
+        </span>
+      )}
       <button className="btn-toolbar" disabled={busy} onClick={doFetch}>
         Fetch
       </button>

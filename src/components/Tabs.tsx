@@ -1,4 +1,5 @@
 import { useRepoStore } from "../store/repoStore";
+import { AddRepoMenu } from "./RepoPicker";
 
 function repoName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
@@ -9,8 +10,6 @@ export function Tabs() {
   const activeRepoPath = useRepoStore((s) => s.activeRepoPath);
   const setActiveTab = useRepoStore((s) => s.setActiveTab);
   const closeTab = useRepoStore((s) => s.closeTab);
-
-  if (tabs.length === 0) return null;
 
   return (
     <div className="tabs">
@@ -35,6 +34,7 @@ export function Tabs() {
           </button>
         </div>
       ))}
+      <AddRepoMenu />
     </div>
   );
 }
