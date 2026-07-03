@@ -51,6 +51,21 @@ and [PLAN.md](PLAN.md) for the backlog.
   `parentLanes`/`passThroughLanes` (bottom-half + full-height connectors)
   all using the *target* lane's color, not the current lane's index. See
   `src/lib/graphLayout.ts` if lines look disconnected or mis-colored again.
+  A fork point with 2+ visible descendant branches produces duplicate
+  "waiting lanes" that converge on one commit — each needs its own
+  `convergingLanes` entry drawn in, or the non-primary lane just vanishes
+  with no visual explanation. A lane freed by that same-row convergence must
+  not be immediately handed to a *different* branch fanning out of the same
+  merge commit (the `CLOSING` sentinel in `layoutGraph` enforces a one-row
+  cooldown) — otherwise two unrelated branches sharing a lane slot back to
+  back, at the exact same dot with zero visual gap, reads as one branch
+  morphing into the next. `list_commits` (`src-tauri/src/git.rs`)
+  intentionally walks `--branches --tags HEAD`, not `--all`, so stale
+  remote-tracking refs (deleted upstream, not yet pruned locally) don't open
+  unexplained lanes with no badge to justify them. Squash-merged branches
+  have no real parent edge into the commit they were squashed onto — their
+  lane is expected to just dead-end at their own root/fork point rather than
+  visually connect; don't try to fabricate a connection for that case.
 - **Diff line backgrounds**: `.diff-line` needs `width: max-content;
   min-width: 100%` inside a `overflow-x: auto` container, or long lines'
   colored background clips at the pane edge instead of scrolling with the
