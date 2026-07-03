@@ -134,6 +134,19 @@ export async function currentBranch(repoPath: string): Promise<string> {
   return invoke<string>("current_branch", { repoPath });
 }
 
+export interface AheadBehind {
+  ahead: number;
+  behind: number;
+}
+
+export async function aheadBehind(
+  repoPath: string,
+  branch: string,
+  upstream: string,
+): Promise<AheadBehind> {
+  return invoke<AheadBehind>("ahead_behind", { repoPath, branch, upstream });
+}
+
 export async function fetchAll(repoPath: string): Promise<string> {
   return invoke<string>("fetch_all", { repoPath });
 }
@@ -165,4 +178,120 @@ export async function stashPop(
   index?: number,
 ): Promise<string> {
   return invoke<string>("stash_pop", { repoPath, index: index ?? null });
+}
+
+export async function checkoutRef(
+  repoPath: string,
+  refName: string,
+): Promise<string> {
+  return invoke<string>("checkout_ref", { repoPath, refName });
+}
+
+export async function createBranch(
+  repoPath: string,
+  name: string,
+  sha: string,
+): Promise<string> {
+  return invoke<string>("create_branch", { repoPath, name, sha });
+}
+
+export async function deleteBranch(
+  repoPath: string,
+  name: string,
+  force = false,
+): Promise<string> {
+  return invoke<string>("delete_branch", { repoPath, name, force });
+}
+
+export async function createTag(
+  repoPath: string,
+  name: string,
+  sha: string,
+): Promise<string> {
+  return invoke<string>("create_tag", { repoPath, name, sha });
+}
+
+export async function cherryPick(repoPath: string, sha: string): Promise<string> {
+  return invoke<string>("cherry_pick", { repoPath, sha });
+}
+
+export async function revertCommit(repoPath: string, sha: string): Promise<string> {
+  return invoke<string>("revert_commit", { repoPath, sha });
+}
+
+export type ResetMode = "soft" | "mixed" | "hard";
+
+export async function resetToCommit(
+  repoPath: string,
+  sha: string,
+  mode: ResetMode,
+): Promise<string> {
+  return invoke<string>("reset_to_commit", { repoPath, sha, mode });
+}
+
+export interface WorkingFileEntry {
+  path: string;
+  oldPath: string | null;
+  /** Status in the index (staged side): "modified" | "added" | "deleted" | "renamed" | "copied" | "unmerged" | "type-changed" | "none". */
+  indexStatus: FileStatus | "unmerged" | "none";
+  /** Status in the working tree (unstaged side); same set plus "untracked". */
+  worktreeStatus: FileStatus | "unmerged" | "untracked" | "none";
+  indexInsertions: number;
+  indexDeletions: number;
+  worktreeInsertions: number;
+  worktreeDeletions: number;
+}
+
+interface RawWorkingFileEntry {
+  path: string;
+  old_path: string | null;
+  index_status: string;
+  worktree_status: string;
+  index_insertions: number;
+  index_deletions: number;
+  worktree_insertions: number;
+  worktree_deletions: number;
+}
+
+export async function gitStatus(repoPath: string): Promise<WorkingFileEntry[]> {
+  const raw = await invoke<RawWorkingFileEntry[]>("git_status", { repoPath });
+  return raw.map((f) => ({
+    path: f.path,
+    oldPath: f.old_path,
+    indexStatus: f.index_status as WorkingFileEntry["indexStatus"],
+    worktreeStatus: f.worktree_status as WorkingFileEntry["worktreeStatus"],
+    indexInsertions: f.index_insertions,
+    indexDeletions: f.index_deletions,
+    worktreeInsertions: f.worktree_insertions,
+    worktreeDeletions: f.worktree_deletions,
+  }));
+}
+
+export async function stagePath(repoPath: string, path: string): Promise<string> {
+  return invoke<string>("stage_path", { repoPath, path });
+}
+
+export async function unstagePath(repoPath: string, path: string): Promise<string> {
+  return invoke<string>("unstage_path", { repoPath, path });
+}
+
+export async function stageAll(repoPath: string): Promise<string> {
+  return invoke<string>("stage_all", { repoPath });
+}
+
+export async function unstageAll(repoPath: string): Promise<string> {
+  return invoke<string>("unstage_all", { repoPath });
+}
+
+export async function commitChanges(repoPath: string, message: string): Promise<string> {
+  return invoke<string>("commit", { repoPath, message });
+}
+
+export async function getWorkingFileDiff(
+  repoPath: string,
+  path: string,
+  staged: boolean,
+  untracked: boolean,
+): Promise<string> {
+  return invoke<string>("get_working_file_diff", { repoPath, path, staged, untracked });
 }
