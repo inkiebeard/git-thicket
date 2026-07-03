@@ -6,8 +6,10 @@ import {
   type FileChange,
   type PushForceMode,
   type RefInfo,
+  type RemoteInfo,
   type ResetMode,
   type WorkingFileEntry,
+  addRemote,
   aheadBehind as fetchAheadBehind,
   checkoutRef,
   cherryPick,
@@ -23,6 +25,7 @@ import {
   isGitRepo,
   listCommits,
   listRefs,
+  listRemotes,
   pull,
   push,
   resetToCommit,
@@ -47,6 +50,7 @@ export interface RepoTab {
   refs: RefInfo[];
   branch: string | null;
   aheadBehind: AheadBehind | null;
+  remotes: RemoteInfo[];
   loadingCommits: boolean;
   error: string | null;
 
@@ -75,6 +79,7 @@ function makeTab(repoPath: string): RepoTab {
     refs: [],
     branch: null,
     aheadBehind: null,
+    remotes: [],
     loadingCommits: true,
     error: null,
     selectedSha: null,
@@ -121,6 +126,7 @@ interface RepoState {
   doPush: (forceMode?: PushForceMode) => Promise<void>;
   doStashPush: (message?: string) => Promise<void>;
   doStashPop: (index?: number) => Promise<void>;
+  doAddRemote: (name: string, url: string) => Promise<void>;
 
   doCheckoutRef: (refName: string) => Promise<void>;
   doCreateBranch: (name: string, sha: string) => Promise<void>;
@@ -191,12 +197,13 @@ export const useRepoStore = create<RepoState>((set, get) => {
   async function loadTabData(repoPath: string) {
     updateTab(repoPath, { loadingCommits: true, error: null });
     try {
-      const [commits, refs, branch] = await Promise.all([
+      const [commits, refs, branch, remotes] = await Promise.all([
         listCommits(repoPath),
         listRefs(repoPath),
         currentBranch(repoPath),
+        listRemotes(repoPath).catch(() => []),
       ]);
-      updateTab(repoPath, { commits, refs, branch, loadingCommits: false });
+      updateTab(repoPath, { commits, refs, branch, remotes, loadingCommits: false });
       loadAheadBehind(repoPath);
     } catch (e) {
       updateTab(repoPath, { error: String(e), loadingCommits: false });
@@ -446,6 +453,12 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runAction(activeRepoPath, () => stashPop(activeRepoPath, index));
+    },
+
+    doAddRemote: async (name: string, url: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, () => addRemote(activeRepoPath, name, url));
     },
 
     doCheckoutRef: async (refName: string) => {
