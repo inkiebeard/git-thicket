@@ -44,6 +44,8 @@ export interface Toast {
   id: number;
   kind: "success" | "error";
   text: string;
+  /** Human-readable label for what was being attempted, e.g. "Push". */
+  action: string;
 }
 
 export interface RepoTab {
@@ -179,7 +181,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
     } catch (e) {
       updateTab(repoPath, {
         loadingStatus: false,
-        toast: { id: toastId++, kind: "error", text: String(e) },
+        toast: { id: toastId++, kind: "error", text: String(e), action: "Load status" },
       });
     }
   }
@@ -220,20 +222,24 @@ export const useRepoStore = create<RepoState>((set, get) => {
     loadWorkingStatus(repoPath);
   }
 
-  async function runAction(repoPath: string, action: () => Promise<string>): Promise<boolean> {
+  async function runAction(
+    repoPath: string,
+    label: string,
+    action: () => Promise<string>,
+  ): Promise<boolean> {
     updateTab(repoPath, { busy: true });
     try {
       const output = await action();
       updateTab(repoPath, {
         busy: false,
-        toast: { id: toastId++, kind: "success", text: output.trim() || "Done" },
+        toast: { id: toastId++, kind: "success", text: output.trim() || "Done", action: label },
       });
       await loadTabData(repoPath);
       return true;
     } catch (e) {
       updateTab(repoPath, {
         busy: false,
-        toast: { id: toastId++, kind: "error", text: String(e) },
+        toast: { id: toastId++, kind: "error", text: String(e), action: label },
       });
       return false;
     }
@@ -242,12 +248,14 @@ export const useRepoStore = create<RepoState>((set, get) => {
   // Stage/unstage toggles happen a lot and shouldn't spam a toast or block
   // the UI with `busy` — just re-fetch status, and only surface a toast on
   // failure.
-  async function runQuiet(repoPath: string, action: () => Promise<string>) {
+  async function runQuiet(repoPath: string, label: string, action: () => Promise<string>) {
     try {
       await action();
       await loadWorkingStatus(repoPath);
     } catch (e) {
-      updateTab(repoPath, { toast: { id: toastId++, kind: "error", text: String(e) } });
+      updateTab(repoPath, {
+        toast: { id: toastId++, kind: "error", text: String(e), action: label },
+      });
     }
   }
 
@@ -422,37 +430,37 @@ export const useRepoStore = create<RepoState>((set, get) => {
     stageFile: async (path: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runQuiet(activeRepoPath, () => stagePath(activeRepoPath, path));
+      await runQuiet(activeRepoPath, "Stage", () => stagePath(activeRepoPath, path));
     },
 
     unstageFile: async (path: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runQuiet(activeRepoPath, () => unstagePath(activeRepoPath, path));
+      await runQuiet(activeRepoPath, "Unstage", () => unstagePath(activeRepoPath, path));
     },
 
     stageFiles: async (paths: string[]) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath || paths.length === 0) return;
-      await runQuiet(activeRepoPath, () => stagePaths(activeRepoPath, paths));
+      await runQuiet(activeRepoPath, "Stage selected", () => stagePaths(activeRepoPath, paths));
     },
 
     unstageFiles: async (paths: string[]) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath || paths.length === 0) return;
-      await runQuiet(activeRepoPath, () => unstagePaths(activeRepoPath, paths));
+      await runQuiet(activeRepoPath, "Unstage selected", () => unstagePaths(activeRepoPath, paths));
     },
 
     stageAllFiles: async () => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runQuiet(activeRepoPath, () => stageAll(activeRepoPath));
+      await runQuiet(activeRepoPath, "Stage all", () => stageAll(activeRepoPath));
     },
 
     unstageAllFiles: async () => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runQuiet(activeRepoPath, () => unstageAll(activeRepoPath));
+      await runQuiet(activeRepoPath, "Unstage all", () => unstageAll(activeRepoPath));
     },
 
     commitStagedChanges: async () => {
@@ -462,7 +470,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const message = tab?.commitMessage.trim();
       if (!message) return;
       const amend = tab?.amend ?? false;
-      const ok = await runAction(activeRepoPath, () =>
+      const ok = await runAction(activeRepoPath, amend ? "Amend commit" : "Commit", () =>
         commitChanges(activeRepoPath, message, amend),
       );
       if (ok) updateTab(activeRepoPath, { commitMessage: "", amend: false });
@@ -471,79 +479,79 @@ export const useRepoStore = create<RepoState>((set, get) => {
     doFetch: async () => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => fetchAll(activeRepoPath));
+      await runAction(activeRepoPath, "Fetch", () => fetchAll(activeRepoPath));
     },
 
     doPull: async () => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => pull(activeRepoPath));
+      await runAction(activeRepoPath, "Pull", () => pull(activeRepoPath));
     },
 
     doPush: async (forceMode: PushForceMode = null) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => push(activeRepoPath, forceMode));
+      await runAction(activeRepoPath, "Push", () => push(activeRepoPath, forceMode));
     },
 
     doStashPush: async (message?: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => stashPush(activeRepoPath, message));
+      await runAction(activeRepoPath, "Stash", () => stashPush(activeRepoPath, message));
     },
 
     doStashPop: async (index?: number) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => stashPop(activeRepoPath, index));
+      await runAction(activeRepoPath, "Stash pop", () => stashPop(activeRepoPath, index));
     },
 
     doAddRemote: async (name: string, url: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => addRemote(activeRepoPath, name, url));
+      await runAction(activeRepoPath, "Add remote", () => addRemote(activeRepoPath, name, url));
     },
 
     doCheckoutRef: async (refName: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => checkoutRef(activeRepoPath, refName));
+      await runAction(activeRepoPath, "Checkout", () => checkoutRef(activeRepoPath, refName));
     },
 
     doCreateBranch: async (name: string, sha: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => createBranch(activeRepoPath, name, sha));
+      await runAction(activeRepoPath, "Create branch", () => createBranch(activeRepoPath, name, sha));
     },
 
     doDeleteBranch: async (name: string, force = false) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => deleteBranch(activeRepoPath, name, force));
+      await runAction(activeRepoPath, "Delete branch", () => deleteBranch(activeRepoPath, name, force));
     },
 
     doCreateTag: async (name: string, sha: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => createTag(activeRepoPath, name, sha));
+      await runAction(activeRepoPath, "Create tag", () => createTag(activeRepoPath, name, sha));
     },
 
     doCherryPick: async (sha: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => cherryPick(activeRepoPath, sha));
+      await runAction(activeRepoPath, "Cherry-pick", () => cherryPick(activeRepoPath, sha));
     },
 
     doRevertCommit: async (sha: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => revertCommit(activeRepoPath, sha));
+      await runAction(activeRepoPath, "Revert commit", () => revertCommit(activeRepoPath, sha));
     },
 
     doResetToCommit: async (sha: string, mode: ResetMode) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, () => resetToCommit(activeRepoPath, sha, mode));
+      await runAction(activeRepoPath, "Reset", () => resetToCommit(activeRepoPath, sha, mode));
     },
   };
 });

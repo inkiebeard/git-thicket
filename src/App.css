@@ -481,14 +481,31 @@ body {
 }
 
 .toolbar-toast {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 6px;
   cursor: pointer;
-  white-space: nowrap;
+  max-width: 320px;
+}
+
+.toolbar-toast-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 320px;
+  white-space: nowrap;
+}
+
+.toolbar-toast-dismiss {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.toolbar-toast-dismiss:hover {
+  opacity: 1;
 }
 
 .toolbar-toast-success {
@@ -539,6 +556,26 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.modal-wide {
+  width: 640px;
+  max-width: 90vw;
+}
+
+.modal-log {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0 0 16px;
+  max-height: 50vh;
+  overflow: auto;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-0);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .btn-secondary {

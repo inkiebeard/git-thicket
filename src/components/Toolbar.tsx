@@ -4,6 +4,7 @@ import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { AddRemoteDialog } from "./AddRemoteDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ErrorDetailModal } from "./ErrorDetailModal";
 import { FetchIcon, PullIcon, PushIcon, RemoteIcon, StashIcon } from "./icons";
 
 function PushSplitButton({ hasRemote }: { hasRemote: boolean }) {
@@ -226,6 +227,7 @@ export function Toolbar() {
   const doFetch = useRepoStore((s) => s.doFetch);
   const doPull = useRepoStore((s) => s.doPull);
   const dismissToast = useRepoStore((s) => s.dismissToast);
+  const [errorModalOpen, setErrorModalOpen] = useState(false);
 
   const upstream = refs.find((r) => r.kind === "head")?.upstream ?? null;
   const diverged = aheadBehind && (aheadBehind.ahead > 0 || aheadBehind.behind > 0);
@@ -235,7 +237,8 @@ export function Toolbar() {
   );
 
   useEffect(() => {
-    if (!toast) return;
+    // Errors stay until dismissed or inspected — only successes auto-clear.
+    if (!toast || toast.kind === "error") return;
     const t = setTimeout(dismissToast, 4000);
     return () => clearTimeout(t);
   }, [toast, dismissToast]);
@@ -272,10 +275,35 @@ export function Toolbar() {
         {toast && (
           <span
             className={`toolbar-toast toolbar-toast-${toast.kind}`}
-            onClick={dismissToast}
+            onClick={() => {
+              if (toast.kind === "error") setErrorModalOpen(true);
+              else dismissToast();
+            }}
+            title={toast.kind === "error" ? "Click for details" : undefined}
           >
-            {toast.text}
+            <span className="toolbar-toast-text">{toast.text}</span>
+            {toast.kind === "error" && (
+              <span
+                className="toolbar-toast-dismiss"
+                title="Dismiss"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  dismissToast();
+                }}
+              >
+                ×
+              </span>
+            )}
           </span>
+        )}
+        {errorModalOpen && toast?.kind === "error" && (
+          <ErrorDetailModal
+            toast={toast}
+            onClose={() => {
+              setErrorModalOpen(false);
+              dismissToast();
+            }}
+          />
         )}
         <RemoteSplitButton />
         <button

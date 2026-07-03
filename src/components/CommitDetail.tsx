@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 
+const IS_MAC = navigator.platform.toLowerCase().includes("mac");
 const CO_AUTHOR_RE = /^co-authored-by:\s*(.+?)\s*<(.+?)>\s*$/i;
 
 interface Person {
@@ -61,6 +62,12 @@ function CommitComposer() {
         rows={3}
         value={message}
         onChange={(e) => setCommitMessage(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && canCommit) {
+            e.preventDefault();
+            commitStagedChanges();
+          }
+        }}
       />
       <label className="commit-composer-amend">
         <input
@@ -84,6 +91,7 @@ function CommitComposer() {
           className="btn-primary"
           disabled={!canCommit}
           onClick={() => commitStagedChanges()}
+          title={`${amend ? "Amend" : "Commit"} (${IS_MAC ? "⌘" : "Ctrl"}+Enter)`}
         >
           {amend ? "Amend" : "Commit"}
         </button>
