@@ -166,6 +166,7 @@ export function withGhostCommit(
       author: "",
       date: "",
       subject,
+      coAuthors: [],
       insertions: 0,
       deletions: 0,
     },

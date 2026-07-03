@@ -11,6 +11,7 @@ pub struct CommitInfo {
     pub subject: String,
     pub insertions: u32,
     pub deletions: u32,
+    pub co_authors: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -202,7 +203,12 @@ fn get_commit_stats(repo_path: &str, limit: u32, skip: u32) -> Result<HashMap<St
 /// badge in the UI, so it's what should open a lane.
 #[tauri::command]
 pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<CommitInfo>, String> {
-    let format = format!("%H{RS}%P{RS}%an{RS}%ad{RS}%s{RE}");
+    // Co-authors come from the `Co-authored-by` trailer via git's own
+    // %(trailers:...) placeholder, not a full body fetch — cheap to include
+    // per-commit since it's usually empty, unlike pulling %b for everyone.
+    let format = format!(
+        "%H{RS}%P{RS}%an{RS}%ad{RS}%s{RS}%(trailers:key=Co-authored-by,valueonly,separator=%x1d){RE}"
+    );
     let limit_arg = format!("-n{limit}");
     let skip_arg = format!("--skip={skip}");
     let output = run_git(
@@ -228,11 +234,17 @@ pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<Comm
         .filter(|s| !s.is_empty())
         .filter_map(|record| {
             let fields: Vec<&str> = record.split(RS).collect();
-            if fields.len() < 5 {
+            if fields.len() < 6 {
                 return None;
             }
             let hash = fields[0].to_string();
             let (insertions, deletions) = stats.get(&hash).copied().unwrap_or((0, 0));
+            let co_authors = fields[5]
+                .split('\u{1d}')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect();
             Some(CommitInfo {
                 hash,
                 parents: fields[1]
@@ -244,6 +256,7 @@ pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<Comm
                 subject: fields[4].to_string(),
                 insertions,
                 deletions,
+                co_authors,
             })
         })
         .collect();

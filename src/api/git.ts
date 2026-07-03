@@ -8,6 +8,19 @@ export interface CommitInfo {
   subject: string;
   insertions: number;
   deletions: number;
+  /** Raw "Name <email>" strings from Co-authored-by trailers. */
+  coAuthors: string[];
+}
+
+interface RawCommitInfo {
+  hash: string;
+  parents: string[];
+  author: string;
+  date: string;
+  subject: string;
+  insertions: number;
+  deletions: number;
+  co_authors: string[];
 }
 
 export type RefKind = "branch" | "remote-branch" | "tag" | "head" | "other";
@@ -57,7 +70,17 @@ export async function listCommits(
   limit = 500,
   skip = 0,
 ): Promise<CommitInfo[]> {
-  return invoke<CommitInfo[]>("list_commits", { repoPath, limit, skip });
+  const raw = await invoke<RawCommitInfo[]>("list_commits", { repoPath, limit, skip });
+  return raw.map((c) => ({
+    hash: c.hash,
+    parents: c.parents,
+    author: c.author,
+    date: c.date,
+    subject: c.subject,
+    insertions: c.insertions,
+    deletions: c.deletions,
+    coAuthors: c.co_authors,
+  }));
 }
 
 export async function listRefs(repoPath: string): Promise<RefInfo[]> {

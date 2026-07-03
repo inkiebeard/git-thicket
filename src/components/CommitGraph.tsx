@@ -89,9 +89,9 @@ function RefBadges({ refs }: { refs: RefInfo[] }) {
             r.kind === "tag"
               ? undefined
               : r.kind === "remote-branch"
-                ? "remote-tracking branch — diverged from local"
+                ? `${r.name} on the remote — ahead of or diverged from the local branch of the same name`
                 : r.upstream
-                  ? `tracks ${r.upstream}`
+                  ? `Local branch "${r.name}" — upstream is ${r.upstream}`
                   : "local only, not published to a remote"
           }
         >
@@ -165,6 +165,23 @@ function RowGraphic({ node }: { node: GraphNode }) {
           r={DOT_RADIUS}
           fill={laneColorVar(node.color)}
         />
+      )}
+      {!node.isGhost && (
+        // Invisible, larger hit area layered on top — the visible dot alone
+        // (4px radius) is too small a target to reliably hover for the
+        // author/co-author tooltip.
+        <circle
+          cx={laneX(node.lane)}
+          cy={midY}
+          r={DOT_RADIUS * 2.5}
+          fill="transparent"
+        >
+          <title>
+            {node.commit.coAuthors.length > 0
+              ? `Author: ${node.commit.author}\nCo-authors: ${node.commit.coAuthors.join(", ")}`
+              : `Author: ${node.commit.author}`}
+          </title>
+        </circle>
       )}
     </>
   );
