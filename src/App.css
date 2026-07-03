@@ -848,6 +848,12 @@ body {
   justify-content: flex-end;
 }
 
+.commit-list-header-checkbox {
+  margin-right: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 /* File list: a vertical list of rows above the diff view (the convention
    most git GUIs use), scrollable within a fixed strip so the diff itself
    keeps most of the vertical space. */

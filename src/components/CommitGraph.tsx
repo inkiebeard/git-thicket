@@ -3,6 +3,7 @@ import { useMemo, useRef, useState, type CSSProperties, type DragEvent } from "r
 import type { CommitInfo, RefInfo } from "../api/git";
 import { useColumnOrder } from "../lib/useColumnOrder";
 import { useColumnWidths } from "../lib/useColumnWidths";
+import { usePersistedBoolean } from "../lib/usePersistedBoolean";
 import { useResizableWidths } from "../lib/useResizableWidths";
 import { layoutGraph, maxLane, withGhostCommit, type GraphNode } from "../lib/graphLayout";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
@@ -191,14 +192,17 @@ function DataCell({
   columnKey,
   node,
   width,
+  showChanges,
 }: {
   columnKey: ColumnKey;
   node: GraphNode;
   width: number;
+  showChanges: boolean;
 }) {
   switch (columnKey) {
     case "changes": {
-      const hasChanges = node.commit.insertions > 0 || node.commit.deletions > 0;
+      const hasChanges =
+        showChanges && (node.commit.insertions > 0 || node.commit.deletions > 0);
       return (
         <div className="commit-changes" style={{ width }}>
           {hasChanges && (
@@ -293,6 +297,7 @@ export function CommitGraph() {
   const selectWorkingTree = useRepoStore((s) => s.selectWorkingTree);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dragKey, setDragKey] = useState<ColumnKey | null>(null);
+  const [showChanges, setShowChanges] = usePersistedBoolean(true, "thicket:showChangeCounts");
 
   const repoPath = activeTab?.repoPath ?? "";
 
@@ -394,6 +399,19 @@ export function CommitGraph() {
                   onDragEnd={() => setDragKey(null)}
                   title="Drag to reorder"
                 >
+                  {key === "changes" && (
+                    <input
+                      type="checkbox"
+                      className="commit-list-header-checkbox"
+                      checked={showChanges}
+                      draggable={false}
+                      title="Show +/- change counts"
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onDragStart={(e) => e.stopPropagation()}
+                      onChange={(e) => setShowChanges(e.target.checked)}
+                    />
+                  )}
                   {COLUMN_LABELS[key]}
                 </div>
                 <ResizeHandle onDrag={(dx) => resizeCol(key, dx)} />
@@ -463,7 +481,13 @@ export function CommitGraph() {
                     <RowGraphic node={node} />
                   </svg>
                   {order.map((key) => (
-                    <DataCell key={key} columnKey={key} node={node} width={colWidths[key]} />
+                    <DataCell
+                      key={key}
+                      columnKey={key}
+                      node={node}
+                      width={colWidths[key]}
+                      showChanges={showChanges}
+                    />
                   ))}
                 </div>
               );
