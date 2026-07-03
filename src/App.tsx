@@ -14,7 +14,7 @@ import "./App.css";
 function App() {
   const activeTab = useActiveTab();
   const restoreSession = useRepoStore((s) => s.restoreSession);
-  const { widths, resize } = useResizableWidths([420], "gitux:paneWidths");
+  const { widths, resize } = useResizableWidths([420], "thicket:paneWidths");
 
   useEffect(() => {
     restoreSession();

@@ -66,8 +66,8 @@ and [PLAN.md](PLAN.md) for the backlog.
 1. `cd src-tauri && cargo check` — Rust changes compile
 2. `npx tsc --noEmit` — frontend type-checks
 3. If the dev server is running, confirm the relevant HMR/rebuild log line
-   shows success and the `gitux` process is still alive
-   (`Get-Process -Name gitux`)
+   shows success and the `thicket` process is still alive
+   (`Get-Process -Name thicket`)
 4. For anything touching git command output parsing, sanity-check against
    a real repo with actual branch/merge history — there are several under
    `~/Documents/dev/` on this machine

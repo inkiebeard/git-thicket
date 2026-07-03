@@ -1,6 +1,10 @@
 {
-  "name": "gitux",
-  "private": true,
+  "name": "thicket",
+  "description": "A lightweight, cross-platform git tree viewer built with Tauri and React",
+  "author": {
+    "email": "aaron@inkiebeard.codes",
+    "name": "Aaron Toomey"
+  },
   "version": "0.1.0",
   "type": "module",
   "scripts": {

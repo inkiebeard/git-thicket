@@ -83,8 +83,8 @@ interface RepoState {
   doStashPop: (index?: number) => Promise<void>;
 }
 
-const OPEN_TABS_KEY = "gitux:openTabs";
-const ACTIVE_TAB_KEY = "gitux:activeTab";
+const OPEN_TABS_KEY = "thicket:openTabs";
+const ACTIVE_TAB_KEY = "thicket:activeTab";
 
 function saveSession(tabs: RepoTab[], activeRepoPath: string | null) {
   localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(tabs.map((t) => t.repoPath)));

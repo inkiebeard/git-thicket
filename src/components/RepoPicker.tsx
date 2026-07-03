@@ -3,7 +3,7 @@ import { isGitRepo, openRepoDialog } from "../api/git";
 import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 
-const RECENT_KEY = "gitux:recentRepos";
+const RECENT_KEY = "thicket:recentRepos";
 
 function loadRecent(): string[] {
   try {

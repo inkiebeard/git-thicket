@@ -1,4 +1,4 @@
-# gitux
+# Thicket
 
 A lightweight, cross-platform git tree viewer. Dark mode only, no bloat —
 just a fast way to walk commit history, see what changed, and act on a repo.

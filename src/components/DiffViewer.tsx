@@ -10,7 +10,7 @@ import { useActiveTab } from "../store/repoStore";
 
 type ViewMode = "unified" | "split";
 
-const VIEW_MODE_KEY = "gitux:diffViewMode";
+const VIEW_MODE_KEY = "thicket:diffViewMode";
 
 function loadViewMode(): ViewMode {
   const stored = localStorage.getItem(VIEW_MODE_KEY);
