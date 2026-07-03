@@ -584,6 +584,16 @@ body {
   color: var(--lane-2);
 }
 
+/* Only rendered when it's diverged from its local counterpart (see
+   visibleRefs in CommitGraph.tsx) — styled to read as "elsewhere", not as
+   an ordinary local branch. */
+.ref-badge.ref-remote-branch {
+  background: transparent;
+  border: 1px solid var(--text-2);
+  color: var(--text-2);
+  font-style: italic;
+}
+
 /* Branches with no upstream (never pushed) render hollow instead of filled,
    so published vs local-only is visible at a glance. */
 .ref-badge.ref-local-only {
@@ -598,8 +608,6 @@ body {
 }
 
 .commit-subject {
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
