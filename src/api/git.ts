@@ -6,6 +6,8 @@ export interface CommitInfo {
   author: string;
   date: string;
   subject: string;
+  insertions: number;
+  deletions: number;
 }
 
 export type RefKind = "branch" | "remote-branch" | "tag" | "head" | "other";
@@ -30,12 +32,16 @@ export interface FileChange {
   path: string;
   oldPath: string | null;
   status: FileStatus;
+  insertions: number;
+  deletions: number;
 }
 
 interface RawFileChange {
   path: string;
   old_path: string | null;
   status: FileStatus;
+  insertions: number;
+  deletions: number;
 }
 
 export async function openRepoDialog(): Promise<string | null> {
@@ -70,6 +76,8 @@ export async function getCommitFiles(
     path: f.path,
     oldPath: f.old_path,
     status: f.status,
+    insertions: f.insertions,
+    deletions: f.deletions,
   }));
 }
 

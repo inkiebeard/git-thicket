@@ -9,6 +9,8 @@ pub struct CommitInfo {
     pub author: String,
     pub date: String,
     pub subject: String,
+    pub insertions: u32,
+    pub deletions: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +39,8 @@ pub struct FileChange {
     pub path: String,
     pub old_path: Option<String>,
     pub status: String, // "added", "modified", "deleted", "renamed", "copied"
+    pub insertions: u32,
+    pub deletions: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -205,7 +209,9 @@ pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<Comm
         &repo_path,
         &[
             "log",
-            "--all",
+            "--branches",
+            "--tags",
+            "HEAD",
             "--date-order",
             &format!("--format={format}"),
             "--date=iso-strict",
@@ -213,6 +219,8 @@ pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<Comm
             &skip_arg,
         ],
     )?;
+
+    let stats = get_commit_stats(&repo_path, limit, skip).unwrap_or_default();
 
     let commits = output
         .split(RE)
@@ -223,8 +231,10 @@ pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<Comm
             if fields.len() < 5 {
                 return None;
             }
+            let hash = fields[0].to_string();
+            let (insertions, deletions) = stats.get(&hash).copied().unwrap_or((0, 0));
             Some(CommitInfo {
-                hash: fields[0].to_string(),
+                hash,
                 parents: fields[1]
                     .split_whitespace()
                     .map(str::to_string)
@@ -232,6 +242,8 @@ pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<Comm
                 author: fields[2].to_string(),
                 date: fields[3].to_string(),
                 subject: fields[4].to_string(),
+                insertions,
+                deletions,
             })
         })
         .collect();
@@ -306,29 +318,18 @@ fn status_code_to_name(code: &str) -> &'static str {
 pub fn get_commit_files(repo_path: String, sha: String) -> Result<Vec<FileChange>, String> {
     // Root commits have no parent; diff against the empty tree instead.
     let has_parent = run_git(&repo_path, &["rev-parse", &format!("{sha}^")]).is_ok();
-
-    let output = if has_parent {
-        // Plain `git diff` (rather than `diff-tree`) so merge commits still show
-        // their first-parent diff instead of being silently suppressed.
-        run_git(
-            &repo_path,
-            &["diff", "--name-status", "-M", "-r", &format!("{sha}^"), &sha],
-        )?
+    let base = if has_parent {
+        format!("{sha}^")
     } else {
         // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is git's canonical empty tree hash.
-        run_git(
-            &repo_path,
-            &[
-                "diff",
-                "--no-commit-id",
-                "--name-status",
-                "-M",
-                "-r",
-                "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
-                &sha,
-            ],
-        )?
+        "4b825dc642cb6eb9a060e54bf8d69288fbee4904".to_string()
     };
+
+    // Plain `git diff` (rather than `diff-tree`) so merge commits still show
+    // their first-parent diff instead of being silently suppressed.
+    let output = run_git(&repo_path, &["diff", "--name-status", "-M", "-r", &base, &sha])?;
+    let numstat_output = run_git(&repo_path, &["diff", "--numstat", "-z", "-M", "-r", &base, &sha])?;
+    let stats = parse_numstat_z(&numstat_output);
 
     let files = output
         .lines()
@@ -339,19 +340,19 @@ pub fn get_commit_files(repo_path: String, sha: String) -> Result<Vec<FileChange
                 return None;
             }
             let status = status_code_to_name(parts[0]);
-            if status == "renamed" && parts.len() >= 3 {
-                Some(FileChange {
-                    old_path: Some(parts[1].to_string()),
-                    path: parts[2].to_string(),
-                    status: status.to_string(),
-                })
+            let (old_path, path) = if status == "renamed" && parts.len() >= 3 {
+                (Some(parts[1].to_string()), parts[2].to_string())
             } else {
-                Some(FileChange {
-                    old_path: None,
-                    path: parts[1].to_string(),
-                    status: status.to_string(),
-                })
-            }
+                (None, parts[1].to_string())
+            };
+            let (insertions, deletions) = stats.get(&path).copied().unwrap_or((0, 0));
+            Some(FileChange {
+                old_path,
+                path,
+                status: status.to_string(),
+                insertions,
+                deletions,
+            })
         })
         .collect();
 
