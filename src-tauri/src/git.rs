@@ -489,6 +489,35 @@ pub fn push(repo_path: String, force_mode: Option<String>) -> Result<String, Str
         Some("force-with-lease") => args.push("--force-with-lease"),
         _ => {}
     }
+
+    // A branch that's never been pushed (or a remote that was just added)
+    // has no upstream configured yet, so a plain `git push` fails with
+    // "no upstream branch" — set one up automatically instead of erroring.
+    let has_upstream = run_git(
+        &repo_path,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )
+    .is_ok();
+
+    let remote;
+    let branch;
+    if !has_upstream {
+        let remotes_output = run_git(&repo_path, &["remote"])?;
+        remote = remotes_output
+            .lines()
+            .next()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "No remote configured".to_string())?
+            .to_string();
+        branch = run_git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?
+            .trim()
+            .to_string();
+        args.push("--set-upstream");
+        args.push(&remote);
+        args.push(&branch);
+    }
+
     run_git(&repo_path, &args)
 }
 
