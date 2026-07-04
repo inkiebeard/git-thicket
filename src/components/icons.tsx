@@ -54,3 +54,12 @@ export function StashIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function TerminalIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+      <path d="M4 6l2.5 2-2.5 2M8 10h4" />
+    </svg>
+  );
+}

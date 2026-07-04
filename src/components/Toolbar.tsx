@@ -5,7 +5,7 @@ import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { AddRemoteDialog } from "./AddRemoteDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetailModal } from "./ErrorDetailModal";
-import { FetchIcon, PullIcon, PushIcon, RemoteIcon, StashIcon } from "./icons";
+import { FetchIcon, PullIcon, PushIcon, RemoteIcon, StashIcon, TerminalIcon } from "./icons";
 
 function PushSplitButton({ hasRemote }: { hasRemote: boolean }) {
   const doPush = useRepoStore((s) => s.doPush);
@@ -214,7 +214,12 @@ function RemoteSplitButton() {
   );
 }
 
-export function Toolbar() {
+interface ToolbarProps {
+  terminalOpen: boolean;
+  onToggleTerminal: () => void;
+}
+
+export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
   const activeTab = useActiveTab();
   const repoPath = activeTab?.repoPath ?? null;
   const branch = activeTab?.branch ?? null;
@@ -332,6 +337,14 @@ export function Toolbar() {
         </button>
         <PushSplitButton hasRemote={hasRemote} />
         <StashSplitButton hasChanges={hasChanges} />
+        <button
+          className={`btn-toolbar${terminalOpen ? " btn-toolbar-active" : ""}`}
+          onClick={onToggleTerminal}
+          title="Toggle terminal command composer"
+        >
+          <TerminalIcon />
+          Terminal
+        </button>
       </div>
     </div>
   );

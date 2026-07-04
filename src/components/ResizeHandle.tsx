@@ -1,27 +1,29 @@
 import { useEffect, useRef } from "react";
 
 interface ResizeHandleProps {
-  onDrag: (deltaX: number) => void;
+  onDrag: (delta: number) => void;
+  axis?: "x" | "y";
 }
 
-export function ResizeHandle({ onDrag }: ResizeHandleProps) {
+export function ResizeHandle({ onDrag, axis = "x" }: ResizeHandleProps) {
   const dragging = useRef(false);
-  const lastX = useRef(0);
+  const last = useRef(0);
   const onDragRef = useRef(onDrag);
   onDragRef.current = onDrag;
 
   function onMouseDown(e: React.MouseEvent) {
     dragging.current = true;
-    lastX.current = e.clientX;
-    document.body.style.cursor = "col-resize";
+    last.current = axis === "x" ? e.clientX : e.clientY;
+    document.body.style.cursor = axis === "x" ? "col-resize" : "row-resize";
     e.preventDefault();
   }
 
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
       if (!dragging.current) return;
-      const delta = e.clientX - lastX.current;
-      lastX.current = e.clientX;
+      const pos = axis === "x" ? e.clientX : e.clientY;
+      const delta = pos - last.current;
+      last.current = pos;
       onDragRef.current(delta);
     }
     function onMouseUp() {
@@ -34,7 +36,12 @@ export function ResizeHandle({ onDrag }: ResizeHandleProps) {
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     };
-  }, []);
+  }, [axis]);
 
-  return <div className="pane-divider" onMouseDown={onMouseDown} />;
+  return (
+    <div
+      className={axis === "x" ? "pane-divider" : "pane-divider-horizontal"}
+      onMouseDown={onMouseDown}
+    />
+  );
 }
