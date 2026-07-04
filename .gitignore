@@ -32,3 +32,6 @@ tauri-dev*.log
 # Local Claude Code session state
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+
+design/*
