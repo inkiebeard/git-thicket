@@ -587,6 +587,19 @@ pub fn rename_branch(repo_path: String, old_name: String, new_name: String) -> R
     run_git(&repo_path, &["branch", "-m", &old_name, &new_name])
 }
 
+/// Runs an arbitrary git subcommand built from discrete argv entries — the
+/// backend for the "terminal" command composer. Safe from shell injection
+/// the same way every other command here is: args go straight to
+/// `Command::new("git").args(..)`, never through a shell, so there's no
+/// metacharacter/quoting concern. It's still a broad hatch (any git
+/// subcommand), so the frontend is expected to only ever construct `args`
+/// from its own validated block selections, not free-text input.
+#[tauri::command]
+pub fn run_git_args(repo_path: String, args: Vec<String>) -> Result<String, String> {
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_git(&repo_path, &arg_refs)
+}
+
 #[tauri::command]
 pub fn create_tag(repo_path: String, name: String, sha: String) -> Result<String, String> {
     run_git(&repo_path, &["tag", &name, &sha])

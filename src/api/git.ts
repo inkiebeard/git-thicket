@@ -259,6 +259,10 @@ export async function renameBranch(
   return invoke<string>("rename_branch", { repoPath, oldName, newName });
 }
 
+export async function runGitArgs(repoPath: string, args: string[]): Promise<string> {
+  return invoke<string>("run_git_args", { repoPath, args });
+}
+
 export async function createTag(
   repoPath: string,
   name: string,
