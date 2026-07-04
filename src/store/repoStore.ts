@@ -28,6 +28,7 @@ import {
   listRemotes,
   pull,
   push,
+  renameBranch,
   resetToCommit,
   revertCommit,
   stageAll,
@@ -140,6 +141,7 @@ interface RepoState {
   doCheckoutRef: (refName: string) => Promise<void>;
   doCreateBranch: (name: string, sha: string) => Promise<void>;
   doDeleteBranch: (name: string, force?: boolean) => Promise<void>;
+  doRenameBranch: (oldName: string, newName: string) => Promise<void>;
   doCreateTag: (name: string, sha: string) => Promise<void>;
   doCherryPick: (sha: string) => Promise<void>;
   doRevertCommit: (sha: string) => Promise<void>;
@@ -528,6 +530,14 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runAction(activeRepoPath, "Delete branch", () => deleteBranch(activeRepoPath, name, force));
+    },
+
+    doRenameBranch: async (oldName: string, newName: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Rename branch", () =>
+        renameBranch(activeRepoPath, oldName, newName),
+      );
     },
 
     doCreateTag: async (name: string, sha: string) => {

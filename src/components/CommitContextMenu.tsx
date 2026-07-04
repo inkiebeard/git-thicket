@@ -24,6 +24,7 @@ export function CommitContextMenu({
   const doCheckoutRef = useRepoStore((s) => s.doCheckoutRef);
   const doCreateBranch = useRepoStore((s) => s.doCreateBranch);
   const doDeleteBranch = useRepoStore((s) => s.doDeleteBranch);
+  const doRenameBranch = useRepoStore((s) => s.doRenameBranch);
   const doCreateTag = useRepoStore((s) => s.doCreateTag);
   const doCherryPick = useRepoStore((s) => s.doCherryPick);
   const doRevertCommit = useRepoStore((s) => s.doRevertCommit);
@@ -32,9 +33,14 @@ export function CommitContextMenu({
   const [promptMode, setPromptMode] = useState<"branch" | "tag" | null>(null);
   const [resetMode, setResetMode] = useState<ResetMode | null>(null);
   const [deleteBranchName, setDeleteBranchName] = useState<string | null>(null);
+  const [renameBranchName, setRenameBranchName] = useState<string | null>(null);
 
   const sha = commit.hash;
-  const dialogOpen = promptMode !== null || resetMode !== null || deleteBranchName !== null;
+  const dialogOpen =
+    promptMode !== null ||
+    resetMode !== null ||
+    deleteBranchName !== null ||
+    renameBranchName !== null;
 
   async function copy(text: string) {
     await navigator.clipboard.writeText(text);
@@ -59,6 +65,7 @@ export function CommitContextMenu({
     items.push({ separator: true });
     for (const b of branches) {
       items.push({ label: `Checkout ${b.name}`, onSelect: () => doCheckoutRef(b.name) });
+      items.push({ label: `Rename ${b.name}…`, onSelect: () => setRenameBranchName(b.name) });
       items.push({
         label: `Delete ${b.name}`,
         danger: true,
@@ -120,6 +127,19 @@ export function CommitContextMenu({
           onCancel={onClose}
           onConfirm={() => {
             doDeleteBranch(deleteBranchName, false);
+            onClose();
+          }}
+        />
+      )}
+      {renameBranchName && (
+        <PromptDialog
+          title="Rename branch"
+          label="New name"
+          confirmLabel="Rename"
+          initialValue={renameBranchName}
+          onCancel={onClose}
+          onConfirm={(newName) => {
+            doRenameBranch(renameBranchName, newName);
             onClose();
           }}
         />
