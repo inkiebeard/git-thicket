@@ -37,6 +37,7 @@ pub fn run() {
             git::checkout_ref,
             git::create_branch,
             git::delete_branch,
+            git::rename_branch,
             git::create_tag,
             git::cherry_pick,
             git::revert_commit,

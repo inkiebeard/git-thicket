@@ -577,6 +577,16 @@ pub fn delete_branch(repo_path: String, name: String, force: bool) -> Result<Str
     run_git(&repo_path, &["branch", flag, &name])
 }
 
+/// `git branch -m` preserves whatever upstream the branch was already
+/// tracking (it renames the config section along with the branch) — it
+/// does not retarget tracking to a same-named remote branch. If that's
+/// needed (e.g. renaming to match a differently-named remote default), the
+/// user still pushes with `-u` afterward to point it there explicitly.
+#[tauri::command]
+pub fn rename_branch(repo_path: String, old_name: String, new_name: String) -> Result<String, String> {
+    run_git(&repo_path, &["branch", "-m", &old_name, &new_name])
+}
+
 #[tauri::command]
 pub fn create_tag(repo_path: String, name: String, sha: String) -> Result<String, String> {
     run_git(&repo_path, &["tag", &name, &sha])

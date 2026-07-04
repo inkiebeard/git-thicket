@@ -251,6 +251,14 @@ export async function deleteBranch(
   return invoke<string>("delete_branch", { repoPath, name, force });
 }
 
+export async function renameBranch(
+  repoPath: string,
+  oldName: string,
+  newName: string,
+): Promise<string> {
+  return invoke<string>("rename_branch", { repoPath, oldName, newName });
+}
+
 export async function createTag(
   repoPath: string,
   name: string,
