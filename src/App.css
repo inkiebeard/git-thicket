@@ -33,6 +33,15 @@
   box-sizing: border-box;
 }
 
+/* The browser default focus outline is a plain rectangle and doesn't follow
+   border-radius, so on a small rounded button it renders as square corners
+   poking out past the rounded ones. box-shadow, unlike outline, always
+   clips to the element's own border-radius. */
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 html,
 body,
 #root {
