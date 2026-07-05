@@ -47,14 +47,20 @@ export function CommitContextMenu({
   }
 
   const items: ContextMenuEntry[] = [
-    { label: "Copy SHA", onSelect: () => copy(sha) },
-    { label: "Copy short SHA", onSelect: () => copy(sha.slice(0, 7)) },
-    { label: "Copy commit message", onSelect: () => copy(commit.subject) },
+    { label: "Copy SHA", onSelect: () => { copy(sha); onClose(); } },
+    { label: "Copy short SHA", onSelect: () => { copy(sha.slice(0, 7)); onClose(); } },
+    { label: "Copy commit message", onSelect: () => { copy(commit.subject); onClose(); } },
     { separator: true },
-    { label: "Checkout this commit (detached HEAD)", onSelect: () => doCheckoutRef(sha) },
+    {
+      label: "Checkout this commit (detached HEAD)",
+      onSelect: () => { doCheckoutRef(sha); onClose(); },
+    },
     { label: "Create branch here…", onSelect: () => setPromptMode("branch") },
-    { label: "Cherry-pick onto current branch", onSelect: () => doCherryPick(sha) },
-    { label: "Revert commit", onSelect: () => doRevertCommit(sha) },
+    {
+      label: "Cherry-pick onto current branch",
+      onSelect: () => { doCherryPick(sha); onClose(); },
+    },
+    { label: "Revert commit", onSelect: () => { doRevertCommit(sha); onClose(); } },
     { label: "Reset current branch → Soft", onSelect: () => setResetMode("soft") },
     { label: "Reset current branch → Mixed", onSelect: () => setResetMode("mixed") },
     { label: "Reset current branch → Hard", onSelect: () => setResetMode("hard"), danger: true },
@@ -64,7 +70,10 @@ export function CommitContextMenu({
   if (branches.length > 0) {
     items.push({ separator: true });
     for (const b of branches) {
-      items.push({ label: `Checkout ${b.name}`, onSelect: () => doCheckoutRef(b.name) });
+      items.push({
+        label: `Checkout ${b.name}`,
+        onSelect: () => { doCheckoutRef(b.name); onClose(); },
+      });
       items.push({ label: `Rename ${b.name}…`, onSelect: () => setRenameBranchName(b.name) });
       items.push({
         label: `Delete ${b.name}`,

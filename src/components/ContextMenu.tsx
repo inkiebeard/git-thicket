@@ -3,6 +3,10 @@ import { useClickOutside } from "../lib/useClickOutside";
 
 export interface ContextMenuAction {
   label: string;
+  /** Whatever this does — including closing the menu via the `onClose`
+   * passed to `ContextMenu` — is entirely up to the caller. Items that open
+   * a follow-up dialog must NOT close here, or the dialog's own mounted
+   * parent gets torn down before it ever renders. */
   onSelect: () => void;
   danger?: boolean;
   disabled?: boolean;
@@ -64,10 +68,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
             key={i}
             className={`context-menu-item${item.danger ? " context-menu-item-danger" : ""}`}
             disabled={item.disabled}
-            onClick={() => {
-              item.onSelect();
-              onClose();
-            }}
+            onClick={() => item.onSelect()}
           >
             {item.label}
           </button>
