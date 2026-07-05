@@ -8,6 +8,7 @@ import { useResizableWidths } from "../lib/useResizableWidths";
 import { layoutGraph, maxLane, withGhostCommit, type GraphNode } from "../lib/graphLayout";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { CommitContextMenu } from "./CommitContextMenu";
+import { RefContextMenu } from "./RefContextMenu";
 import { ResizeHandle } from "./ResizeHandle";
 
 const ROW_HEIGHT = 28;
@@ -72,7 +73,13 @@ function visibleRefs(refs: RefInfo[]): RefInfo[] {
   });
 }
 
-function RefBadges({ refs }: { refs: RefInfo[] }) {
+function RefBadges({
+  refs,
+  onRefContextMenu,
+}: {
+  refs: RefInfo[];
+  onRefContextMenu: (e: React.MouseEvent, ref: RefInfo) => void;
+}) {
   const badges = refs.filter(
     (r) => r.kind === "branch" || r.kind === "tag" || r.kind === "head" || r.kind === "remote-branch",
   );
@@ -95,6 +102,11 @@ function RefBadges({ refs }: { refs: RefInfo[] }) {
                   ? `Local branch "${r.name}" — upstream is ${r.upstream}`
                   : "local only, not published to a remote"
           }
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRefContextMenu(e, r);
+          }}
         >
           {r.name}
         </span>
@@ -285,10 +297,17 @@ interface MenuState {
   branches: RefInfo[];
 }
 
+interface RefMenuState {
+  x: number;
+  y: number;
+  ref: RefInfo;
+}
+
 export function CommitGraph() {
   const activeTab = useActiveTab();
   const commits = activeTab?.commits ?? [];
   const refs = activeTab?.refs ?? [];
+  const remotes = activeTab?.remotes ?? [];
   const selectedSha = activeTab?.selectedSha ?? null;
   const loadingCommits = activeTab?.loadingCommits ?? false;
   const workingStatus = activeTab?.workingStatus ?? [];
@@ -296,6 +315,7 @@ export function CommitGraph() {
   const selectCommit = useRepoStore((s) => s.selectCommit);
   const selectWorkingTree = useRepoStore((s) => s.selectWorkingTree);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [refMenu, setRefMenu] = useState<RefMenuState | null>(null);
   const [dragKey, setDragKey] = useState<ColumnKey | null>(null);
   const [showChanges, setShowChanges] = usePersistedBoolean(true, "thicket:showChangeCounts");
 
@@ -475,7 +495,12 @@ export function CommitGraph() {
                   }}
                 >
                   <div className="commit-refs-cell" style={{ width: refsWidth }}>
-                    <RefBadges refs={commitRefs} />
+                    <RefBadges
+                      refs={commitRefs}
+                      onRefContextMenu={(e, ref) =>
+                        setRefMenu({ x: e.clientX, y: e.clientY, ref })
+                      }
+                    />
                   </div>
                   <svg width={graphWidth} height={ROW_HEIGHT} className="commit-graph-svg">
                     <RowGraphic node={node} />
@@ -502,6 +527,15 @@ export function CommitGraph() {
           commit={menu.commit}
           branches={menu.branches}
           onClose={() => setMenu(null)}
+        />
+      )}
+      {refMenu && (
+        <RefContextMenu
+          x={refMenu.x}
+          y={refMenu.y}
+          ref={refMenu.ref}
+          remotes={remotes.map((r) => r.name)}
+          onClose={() => setRefMenu(null)}
         />
       )}
     </div>
