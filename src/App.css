@@ -1518,3 +1518,104 @@ body {
 .terminal-output-error {
   color: var(--danger);
 }
+
+/* Branch manager */
+
+.branch-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: 14px 0 6px;
+}
+
+.branch-section-header:first-of-type {
+  margin-top: 0;
+}
+
+.branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+
+.branch-list-empty {
+  font-size: 12px;
+  color: var(--text-2);
+  padding: 8px 0;
+}
+
+.branch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.branch-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 140px;
+  color: var(--text-0);
+}
+
+.branch-current-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.branch-row-upstream {
+  flex: 1;
+  color: var(--text-2);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.branch-row-actions button {
+  background: var(--bg-3);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.branch-row-actions button:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--text-0);
+  border-color: var(--accent);
+}
+
+.branch-row-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.branch-row-actions button.branch-row-danger {
+  color: var(--danger);
+}
+
+.branch-row-actions button.branch-row-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+}

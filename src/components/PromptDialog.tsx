@@ -6,6 +6,8 @@ interface PromptDialogProps {
   label: string;
   confirmLabel: string;
   initialValue?: string;
+  /** Autocomplete suggestions offered via a native <datalist>. */
+  suggestions?: string[];
   onConfirm: (value: string) => void;
   onCancel: () => void;
 }
@@ -15,11 +17,13 @@ export function PromptDialog({
   label,
   confirmLabel,
   initialValue = "",
+  suggestions,
   onConfirm,
   onCancel,
 }: PromptDialogProps) {
   const [value, setValue] = useState(initialValue);
   const trimmed = value.trim();
+  const listId = suggestions ? "prompt-dialog-suggestions" : undefined;
 
   return (
     <ModalOverlay onClose={onCancel}>
@@ -30,6 +34,7 @@ export function PromptDialog({
           <input
             className="modal-input"
             autoFocus
+            list={listId}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
@@ -37,6 +42,13 @@ export function PromptDialog({
               if (e.key === "Escape") onCancel();
             }}
           />
+          {suggestions && (
+            <datalist id={listId}>
+              {suggestions.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          )}
         </label>
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onCancel}>

@@ -18,6 +18,7 @@ import {
   createTag,
   currentBranch,
   deleteBranch,
+  deleteRemoteBranch,
   fetchAll,
   getCommitDetail,
   getCommitFiles,
@@ -26,11 +27,13 @@ import {
   listCommits,
   listRefs,
   listRemotes,
+  moveBranch,
   pull,
   push,
   renameBranch,
   resetToCommit,
   revertCommit,
+  setUpstream,
   stageAll,
   stagePath,
   stagePaths,
@@ -142,6 +145,9 @@ interface RepoState {
   doCreateBranch: (name: string, sha: string) => Promise<void>;
   doDeleteBranch: (name: string, force?: boolean) => Promise<void>;
   doRenameBranch: (oldName: string, newName: string) => Promise<void>;
+  doMoveBranch: (name: string, target: string) => Promise<void>;
+  doSetUpstream: (name: string, upstream: string) => Promise<void>;
+  doDeleteRemoteBranch: (remote: string, name: string) => Promise<void>;
   doCreateTag: (name: string, sha: string) => Promise<void>;
   doCherryPick: (sha: string) => Promise<void>;
   doRevertCommit: (sha: string) => Promise<void>;
@@ -537,6 +543,30 @@ export const useRepoStore = create<RepoState>((set, get) => {
       if (!activeRepoPath) return;
       await runAction(activeRepoPath, "Rename branch", () =>
         renameBranch(activeRepoPath, oldName, newName),
+      );
+    },
+
+    doMoveBranch: async (name: string, target: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Repoint branch", () =>
+        moveBranch(activeRepoPath, name, target),
+      );
+    },
+
+    doSetUpstream: async (name: string, upstream: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Set upstream", () =>
+        setUpstream(activeRepoPath, name, upstream),
+      );
+    },
+
+    doDeleteRemoteBranch: async (remote: string, name: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Delete remote branch", () =>
+        deleteRemoteBranch(activeRepoPath, remote, name),
       );
     },
 
