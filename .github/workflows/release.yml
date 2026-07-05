@@ -8,6 +8,8 @@ on:
 
 jobs:
   release:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +50,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "gitux ${{ github.ref_name }}"
+          releaseName: "Thicket ${{ github.ref_name }}"
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
