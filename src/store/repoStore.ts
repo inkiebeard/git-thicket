@@ -20,6 +20,8 @@ import {
   currentBranch,
   deleteBranch,
   deleteRemoteBranch,
+  deleteRemoteTag,
+  deleteTag,
   fetchAll,
   getCommitDetail,
   getCommitFiles,
@@ -31,6 +33,7 @@ import {
   moveBranch,
   pull,
   push,
+  pushTag,
   renameBranch,
   resetToCommit,
   revertCommit,
@@ -150,6 +153,9 @@ interface RepoState {
   doSetUpstream: (name: string, upstream: string) => Promise<void>;
   doDeleteRemoteBranch: (remote: string, name: string) => Promise<void>;
   doCreateTag: (name: string, sha: string) => Promise<void>;
+  doDeleteTag: (name: string) => Promise<void>;
+  doPushTag: (remote: string, name: string) => Promise<void>;
+  doDeleteRemoteTag: (remote: string, name: string) => Promise<void>;
   doCherryPick: (sha: string) => Promise<void>;
   doRevertCommit: (sha: string) => Promise<void>;
   doResetToCommit: (sha: string, mode: ResetMode) => Promise<void>;
@@ -624,6 +630,26 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runAction(activeRepoPath, "Create tag", () => createTag(activeRepoPath, name, sha));
+    },
+
+    doDeleteTag: async (name: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Delete tag", () => deleteTag(activeRepoPath, name));
+    },
+
+    doPushTag: async (remote: string, name: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Push tag", () => pushTag(activeRepoPath, remote, name));
+    },
+
+    doDeleteRemoteTag: async (remote: string, name: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Delete remote tag", () =>
+        deleteRemoteTag(activeRepoPath, remote, name),
+      );
     },
 
     doCherryPick: async (sha: string) => {

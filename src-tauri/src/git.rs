@@ -625,6 +625,24 @@ pub fn create_tag(repo_path: String, name: String, sha: String) -> Result<String
 }
 
 #[tauri::command]
+pub fn delete_tag(repo_path: String, name: String) -> Result<String, String> {
+    run_git(&repo_path, &["tag", "-d", &name])
+}
+
+/// A plain `git push <remote> <tag>` only pushes the tag ref itself, unlike
+/// `--tags` which pushes every tag in the repo — scoped to just the one the
+/// user asked for.
+#[tauri::command]
+pub fn push_tag(repo_path: String, remote: String, name: String) -> Result<String, String> {
+    run_git(&repo_path, &["push", &remote, &name])
+}
+
+#[tauri::command]
+pub fn delete_remote_tag(repo_path: String, remote: String, name: String) -> Result<String, String> {
+    run_git(&repo_path, &["push", &remote, "--delete", &name])
+}
+
+#[tauri::command]
 pub fn cherry_pick(repo_path: String, sha: String) -> Result<String, String> {
     run_git(&repo_path, &["cherry-pick", &sha])
 }

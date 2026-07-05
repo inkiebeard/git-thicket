@@ -295,6 +295,26 @@ export async function createTag(
   return invoke<string>("create_tag", { repoPath, name, sha });
 }
 
+export async function deleteTag(repoPath: string, name: string): Promise<string> {
+  return invoke<string>("delete_tag", { repoPath, name });
+}
+
+export async function pushTag(
+  repoPath: string,
+  remote: string,
+  name: string,
+): Promise<string> {
+  return invoke<string>("push_tag", { repoPath, remote, name });
+}
+
+export async function deleteRemoteTag(
+  repoPath: string,
+  remote: string,
+  name: string,
+): Promise<string> {
+  return invoke<string>("delete_remote_tag", { repoPath, remote, name });
+}
+
 export async function cherryPick(repoPath: string, sha: string): Promise<string> {
   return invoke<string>("cherry_pick", { repoPath, sha });
 }
