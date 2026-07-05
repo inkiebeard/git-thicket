@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { stashList as fetchStashList, type StashEntry } from "../api/git";
 import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
-import { AddRemoteDialog } from "./AddRemoteDialog";
+import { BranchManager } from "./BranchManager";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetailModal } from "./ErrorDetailModal";
-import { FetchIcon, PullIcon, PushIcon, RemoteIcon, StashIcon, TerminalIcon } from "./icons";
+import { FetchIcon, HamburgerIcon, PullIcon, PushIcon, StashIcon } from "./icons";
+import { RemotesDialog } from "./RemotesDialog";
+import { SettingsDialog } from "./SettingsDialog";
 
 function PushSplitButton({ hasRemote }: { hasRemote: boolean }) {
   const doPush = useRepoStore((s) => s.doPush);
@@ -153,63 +155,69 @@ function StashSplitButton({ hasChanges }: { hasChanges: boolean }) {
   );
 }
 
-function RemoteSplitButton() {
-  const remotes = useActiveTab()?.remotes ?? [];
+function AdvancedMenuButton({ terminalOpen, onToggleTerminal }: ToolbarProps) {
   const busy = useActiveTab()?.busy ?? false;
-  const doAddRemote = useRepoStore((s) => s.doAddRemote);
   const [open, setOpen] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [remotesOpen, setRemotesOpen] = useState(false);
+  const [branchManagerOpen, setBranchManagerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const ref = useClickOutside(() => setOpen(false));
 
   return (
-    <div className="split-button" ref={ref}>
+    <div className="menu-anchor" ref={ref}>
       <button
         className="btn-toolbar"
         disabled={busy}
-        onClick={() => setDialogOpen(true)}
-        title="Add a remote"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Advanced menu"
+        title="Advanced"
       >
-        <RemoteIcon />
-        {remotes.length === 0 ? "Add Remote" : remotes[0].name}
+        <HamburgerIcon />
       </button>
-      {remotes.length > 0 && (
-        <button
-          className="btn-toolbar btn-caret"
-          disabled={busy}
-          onClick={() => setOpen((o) => !o)}
-          aria-label="Remote options"
-        >
-          ▾
-        </button>
-      )}
       {open && (
         <div className="dropdown-menu">
-          {remotes.map((r) => (
-            <div key={r.name} className="dropdown-item-info" title={r.url}>
-              {r.name} — {r.url}
-            </div>
-          ))}
-          {remotes.length > 0 && <div className="dropdown-separator" />}
           <button
             className="dropdown-item"
             onClick={() => {
               setOpen(false);
-              setDialogOpen(true);
+              setRemotesOpen(true);
             }}
           >
-            Add remote…
+            Remotes…
+          </button>
+          <button
+            className="dropdown-item"
+            onClick={() => {
+              setOpen(false);
+              setBranchManagerOpen(true);
+            }}
+          >
+            Branches…
+          </button>
+          <button
+            className="dropdown-item"
+            onClick={() => {
+              setOpen(false);
+              onToggleTerminal();
+            }}
+          >
+            {terminalOpen ? "✓ Terminal" : "Terminal"}
+          </button>
+          <div className="dropdown-separator" />
+          <button
+            className="dropdown-item"
+            onClick={() => {
+              setOpen(false);
+              setSettingsOpen(true);
+            }}
+          >
+            Settings…
           </button>
         </div>
       )}
-      {dialogOpen && (
-        <AddRemoteDialog
-          onCancel={() => setDialogOpen(false)}
-          onConfirm={(name, url) => {
-            doAddRemote(name, url);
-            setDialogOpen(false);
-          }}
-        />
-      )}
+      {remotesOpen && <RemotesDialog onClose={() => setRemotesOpen(false)} />}
+      {branchManagerOpen && <BranchManager onClose={() => setBranchManagerOpen(false)} />}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
@@ -310,7 +318,6 @@ export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
             }}
           />
         )}
-        <RemoteSplitButton />
         <button
           className="btn-toolbar"
           disabled={busy || !hasRemote}
@@ -337,14 +344,7 @@ export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
         </button>
         <PushSplitButton hasRemote={hasRemote} />
         <StashSplitButton hasChanges={hasChanges} />
-        <button
-          className={`btn-toolbar${terminalOpen ? " btn-toolbar-active" : ""}`}
-          onClick={onToggleTerminal}
-          title="Toggle terminal command composer"
-        >
-          <TerminalIcon />
-          Terminal
-        </button>
+        <AdvancedMenuButton terminalOpen={terminalOpen} onToggleTerminal={onToggleTerminal} />
       </div>
     </div>
   );

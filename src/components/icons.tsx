@@ -37,15 +37,6 @@ export function PushIcon({ className }: IconProps) {
   );
 }
 
-export function RemoteIcon({ className }: IconProps) {
-  return (
-    <svg {...ICON_PROPS} className={className}>
-      <circle cx="8" cy="8" r="6" />
-      <path d="M2.2 8h11.6M8 2c1.8 1.7 1.8 10.3 0 12M8 2c-1.8 1.7-1.8 10.3 0 12" />
-    </svg>
-  );
-}
-
 export function StashIcon({ className }: IconProps) {
   return (
     <svg {...ICON_PROPS} className={className}>
@@ -60,6 +51,14 @@ export function TerminalIcon({ className }: IconProps) {
     <svg {...ICON_PROPS} className={className}>
       <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
       <path d="M4 6l2.5 2-2.5 2M8 10h4" />
+    </svg>
+  );
+}
+
+export function HamburgerIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M2 4.5h12M2 8h12M2 11.5h12" />
     </svg>
   );
 }

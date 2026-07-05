@@ -413,6 +413,14 @@ body {
   border-right: none;
 }
 
+/* Same positioning as .split-button (anchors a dropdown-menu below a
+   toolbar button) but for a single button with no adjoining caret — unlike
+   .split-button, it must NOT clip the button's right-side corners/border. */
+.menu-anchor {
+  display: flex;
+  position: relative;
+}
+
 .btn-caret {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
@@ -1379,12 +1387,6 @@ body {
 }
 
 /* Terminal command composer */
-
-.btn-toolbar-active {
-  background: var(--bg-2);
-  border-color: var(--accent);
-  color: var(--accent);
-}
 
 .terminal-panel {
   flex-shrink: 0;
