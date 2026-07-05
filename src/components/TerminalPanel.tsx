@@ -8,12 +8,13 @@ interface TerminalPanelProps {
   onClose: () => void;
 }
 
-type Action = "push" | "fetch" | "pull" | "merge" | "checkout" | "reset";
+type Action = "push" | "fetch" | "pull" | "merge" | "checkout" | "reset" | "tag";
 
 type PushTarget = "same-name" | "upstream" | "custom";
 type PushForce = "none" | "force-with-lease" | "force";
 type CheckoutMode = "existing" | "new-branch";
 type ResetMode = "soft" | "mixed" | "hard";
+type TagMode = "create" | "push" | "delete" | "delete-remote";
 
 const FORCE_FLAG: Record<PushForce, string | null> = {
   none: null,
@@ -75,6 +76,11 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
   const [resetMode, setResetMode] = useState<ResetMode>("mixed");
   const [resetTarget, setResetTarget] = useState("HEAD~1");
 
+  // tag
+  const [tagMode, setTagMode] = useState<TagMode>("create");
+  const [tagName, setTagName] = useState(tags[0]?.name ?? "");
+  const [tagTarget, setTagTarget] = useState("HEAD");
+
   const [confirmDanger, setConfirmDanger] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ kind: "success" | "error"; text: string } | null>(null);
@@ -120,6 +126,17 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
         const target = resetTarget.trim() || "HEAD";
         return ["reset", `--${resetMode}`, target];
       }
+      case "tag": {
+        const name = tagName.trim();
+        if (!name) return [];
+        if (tagMode === "create") {
+          const target = tagTarget.trim();
+          return target && target !== "HEAD" ? ["tag", name, target] : ["tag", name];
+        }
+        if (tagMode === "push") return ["push", dest, name];
+        if (tagMode === "delete") return ["tag", "-d", name];
+        return ["push", dest, "--delete", name];
+      }
       default:
         return [];
     }
@@ -142,6 +159,9 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
     newBranchStart,
     resetMode,
     resetTarget,
+    tagMode,
+    tagName,
+    tagTarget,
   ]);
 
   const commandPreview = `git ${args.join(" ")}`;
@@ -214,6 +234,7 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
             <option value="merge">merge</option>
             <option value="checkout">checkout</option>
             <option value="reset">reset</option>
+            <option value="tag">tag</option>
           </select>
 
           {action === "push" && (
@@ -375,6 +396,35 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
               <option value="hard">--hard</option>
             </select>
           )}
+
+          {action === "tag" && (
+            <>
+              <select
+                className="terminal-select"
+                value={tagMode}
+                onChange={(e) => setTagMode(e.target.value as TagMode)}
+              >
+                <option value="create">create</option>
+                <option value="push">push</option>
+                <option value="delete">delete</option>
+                <option value="delete-remote">delete on remote</option>
+              </select>
+              {(tagMode === "push" || tagMode === "delete-remote") && (
+                <select
+                  className="terminal-select"
+                  value={destination}
+                  onChange={(e) => setDestination(e.target.value)}
+                >
+                  {remotes.length === 0 && <option value="origin">origin</option>}
+                  {remotes.map((r) => (
+                    <option key={r.name} value={r.name}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
+          )}
         </div>
 
         {action === "checkout" && checkoutMode === "new-branch" && (
@@ -404,6 +454,36 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
               onChange={(e) => setResetTarget(e.target.value)}
               placeholder="e.g. HEAD~1, a commit sha, a branch"
             />
+          </div>
+        )}
+
+        {action === "tag" && (
+          <div className="terminal-custom-row">
+            <input
+              className="terminal-input"
+              list="terminal-tag-names"
+              value={tagName}
+              onChange={(e) => setTagName(e.target.value)}
+              placeholder="tag name"
+            />
+            {tags.length > 0 && (
+              <datalist id="terminal-tag-names">
+                {tags.map((t) => (
+                  <option key={t.name} value={t.name} />
+                ))}
+              </datalist>
+            )}
+            {tagMode === "create" && (
+              <>
+                <span className="terminal-token">at</span>
+                <input
+                  className="terminal-input"
+                  value={tagTarget}
+                  onChange={(e) => setTagTarget(e.target.value)}
+                  placeholder="target (default HEAD)"
+                />
+              </>
+            )}
           </div>
         )}
 
