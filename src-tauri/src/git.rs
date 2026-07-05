@@ -587,6 +587,25 @@ pub fn rename_branch(repo_path: String, old_name: String, new_name: String) -> R
     run_git(&repo_path, &["branch", "-m", &old_name, &new_name])
 }
 
+/// `git branch -f` refuses to move the currently checked-out branch ("error:
+/// Cannot force update the current branch"); repointing HEAD's own branch
+/// should go through `reset_to_commit` instead, which the UI already offers
+/// from the commit context menu.
+#[tauri::command]
+pub fn move_branch(repo_path: String, name: String, target: String) -> Result<String, String> {
+    run_git(&repo_path, &["branch", "-f", &name, &target])
+}
+
+#[tauri::command]
+pub fn set_upstream(repo_path: String, name: String, upstream: String) -> Result<String, String> {
+    run_git(&repo_path, &["branch", "--set-upstream-to", &upstream, &name])
+}
+
+#[tauri::command]
+pub fn delete_remote_branch(repo_path: String, remote: String, name: String) -> Result<String, String> {
+    run_git(&repo_path, &["push", &remote, "--delete", &name])
+}
+
 /// Runs an arbitrary git subcommand built from discrete argv entries — the
 /// backend for the "terminal" command composer. Safe from shell injection
 /// the same way every other command here is: args go straight to

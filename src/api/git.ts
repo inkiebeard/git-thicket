@@ -259,6 +259,30 @@ export async function renameBranch(
   return invoke<string>("rename_branch", { repoPath, oldName, newName });
 }
 
+export async function moveBranch(
+  repoPath: string,
+  name: string,
+  target: string,
+): Promise<string> {
+  return invoke<string>("move_branch", { repoPath, name, target });
+}
+
+export async function setUpstream(
+  repoPath: string,
+  name: string,
+  upstream: string,
+): Promise<string> {
+  return invoke<string>("set_upstream", { repoPath, name, upstream });
+}
+
+export async function deleteRemoteBranch(
+  repoPath: string,
+  remote: string,
+  name: string,
+): Promise<string> {
+  return invoke<string>("delete_remote_branch", { repoPath, remote, name });
+}
+
 export async function runGitArgs(repoPath: string, args: string[]): Promise<string> {
   return invoke<string>("run_git_args", { repoPath, args });
 }
