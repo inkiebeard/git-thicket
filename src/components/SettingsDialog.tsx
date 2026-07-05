@@ -1,4 +1,11 @@
 import { useState } from "react";
+import {
+  MIN_BACKGROUND_FETCH_INTERVAL_SEC,
+  getBackgroundFetchEnabled,
+  getBackgroundFetchIntervalSec,
+  setBackgroundFetchEnabled,
+  setBackgroundFetchIntervalSec,
+} from "../lib/backgroundFetchSettings";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ModalOverlay } from "./ModalOverlay";
 
@@ -42,16 +49,61 @@ function clearLayoutKeys() {
 export function SettingsDialog({ onClose }: SettingsDialogProps) {
   const [recentCount, setRecentCount] = useState(countRecentRepos);
   const [confirmResetLayout, setConfirmResetLayout] = useState(false);
+  const [fetchEnabled, setFetchEnabled] = useState(getBackgroundFetchEnabled);
+  const [fetchIntervalInput, setFetchIntervalInput] = useState(() =>
+    String(getBackgroundFetchIntervalSec()),
+  );
 
   function clearRecentRepos() {
     localStorage.removeItem(RECENT_REPOS_KEY);
     setRecentCount(0);
   }
 
+  function updateFetchEnabled(value: boolean) {
+    setFetchEnabled(value);
+    setBackgroundFetchEnabled(value);
+  }
+
+  function commitFetchInterval() {
+    const parsed = Number(fetchIntervalInput);
+    const seconds = Number.isFinite(parsed)
+      ? Math.max(MIN_BACKGROUND_FETCH_INTERVAL_SEC, Math.round(parsed))
+      : getBackgroundFetchIntervalSec();
+    setFetchIntervalInput(String(seconds));
+    setBackgroundFetchIntervalSec(seconds);
+  }
+
   return (
     <ModalOverlay onClose={onClose}>
       <div className="modal modal-wide">
         <div className="modal-title">Settings</div>
+
+        <div className="settings-section">
+          <div className="settings-section-title">Background fetch</div>
+          <label className="settings-row">
+            <span>Automatically fetch from remotes in the background</span>
+            <input
+              type="checkbox"
+              checked={fetchEnabled}
+              onChange={(e) => updateFetchEnabled(e.target.checked)}
+            />
+          </label>
+          <label className="settings-row">
+            <span>Interval (seconds, min {MIN_BACKGROUND_FETCH_INTERVAL_SEC})</span>
+            <input
+              className="modal-input settings-number-input"
+              type="number"
+              min={MIN_BACKGROUND_FETCH_INTERVAL_SEC}
+              disabled={!fetchEnabled}
+              value={fetchIntervalInput}
+              onChange={(e) => setFetchIntervalInput(e.target.value)}
+              onBlur={commitFetchInterval}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitFetchInterval();
+              }}
+            />
+          </label>
+        </div>
 
         <div className="settings-section">
           <div className="settings-section-title">Recent repositories</div>

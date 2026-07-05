@@ -1651,4 +1651,14 @@ body {
   gap: 12px;
   font-size: 13px;
   color: var(--text-0);
+  margin-bottom: 10px;
+}
+
+.settings-row:last-child {
+  margin-bottom: 0;
+}
+
+.settings-number-input {
+  width: 70px;
+  text-align: right;
 }

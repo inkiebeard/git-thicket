@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { getBackgroundFetchEnabled, getBackgroundFetchIntervalSec } from "../lib/backgroundFetchSettings";
 import {
   type AheadBehind,
   type CommitDetail,
@@ -229,6 +230,55 @@ export const useRepoStore = create<RepoState>((set, get) => {
     // blank out the commit graph that just loaded fine.
     loadWorkingStatus(repoPath);
   }
+
+  // Same data as loadTabData, but never flips loadingCommits — used for the
+  // background refresh so an unattended tab doesn't flash "Loading commits…"
+  // and blank its graph every 30s. Silently gives up on failure (e.g. no
+  // network) rather than surfacing an error for a poll nobody asked to see.
+  async function loadTabDataQuiet(repoPath: string) {
+    try {
+      const [commits, refs, branch, remotes] = await Promise.all([
+        listCommits(repoPath),
+        listRefs(repoPath),
+        currentBranch(repoPath),
+        listRemotes(repoPath).catch(() => []),
+      ]);
+      updateTab(repoPath, { commits, refs, branch, remotes });
+      loadAheadBehind(repoPath);
+    } catch {
+      return;
+    }
+    loadWorkingStatus(repoPath);
+  }
+
+  // Polls each open tab's remote so ahead/behind and incoming refs stay
+  // current without the user having to click Fetch. Skips a tab that's
+  // mid-action (busy) or has no remote configured.
+  async function backgroundFetch(repoPath: string) {
+    const tab = get().tabs.find((t) => t.repoPath === repoPath);
+    if (!tab || tab.busy || tab.remotes.length === 0) return;
+    try {
+      await fetchAll(repoPath);
+    } catch {
+      return;
+    }
+    await loadTabDataQuiet(repoPath);
+  }
+
+  // Self-rescheduling rather than setInterval so a change to the configured
+  // interval (or toggling it off) in Settings is picked up on the next tick
+  // instead of requiring an app restart.
+  function scheduleBackgroundFetch() {
+    setTimeout(() => {
+      if (getBackgroundFetchEnabled()) {
+        for (const tab of get().tabs) {
+          backgroundFetch(tab.repoPath);
+        }
+      }
+      scheduleBackgroundFetch();
+    }, getBackgroundFetchIntervalSec() * 1000);
+  }
+  scheduleBackgroundFetch();
 
   async function runAction(
     repoPath: string,
