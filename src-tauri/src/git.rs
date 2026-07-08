@@ -70,11 +70,29 @@ pub struct WorkingFileEntry {
     pub worktree_deletions: u32,
 }
 
+// Every command in this module is `#[tauri::command(async)]`: without the
+// `async` attribute Tauri runs sync commands on the main thread, so anything
+// slow — `git fetch` over the network, `git log` on a big repo — freezes the
+// whole window for its duration. The attribute moves execution to a worker
+// thread while the bodies stay plain blocking code.
+
+fn git_command(repo_path: &str, args: &[&str]) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(repo_path).args(args);
+    // A windows-subsystem app has no console, so each spawned console child
+    // would otherwise open its own visible window — with the background fetch
+    // that's a console flash every poll tick in release builds.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo_path)
-        .args(args)
+    let output = git_command(repo_path, args)
         .output()
         .map_err(|e| format!("failed to run git: {e}"))?;
 
@@ -89,10 +107,7 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
 /// (0 = identical, 1 = differences found, 2+ = real error) instead of git's
 /// usual "0 unless something broke" rule, so it needs its own success check.
 fn run_git_diff_no_index(repo_path: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo_path)
-        .args(args)
+    let output = git_command(repo_path, args)
         .output()
         .map_err(|e| format!("failed to run git: {e}"))?;
 
@@ -105,7 +120,7 @@ fn run_git_diff_no_index(repo_path: &str, args: &[&str]) -> Result<String, Strin
 const RS: char = '\u{1f}'; // field separator
 const RE: char = '\u{1e}'; // record separator
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn is_git_repo(repo_path: String) -> bool {
     run_git(&repo_path, &["rev-parse", "--is-inside-work-tree"])
         .map(|s| s.trim() == "true")
@@ -166,23 +181,28 @@ fn parse_shortstat(line: &str) -> (u32, u32) {
 /// format because `--shortstat` output isn't part of the `--format` string —
 /// it's an extra freeform summary line git appends per commit — so mixing
 /// them into one parse would be fragile.
-fn get_commit_stats(repo_path: &str, limit: u32, skip: u32) -> Result<HashMap<String, (u32, u32)>, String> {
+fn get_commit_stats(
+    repo_path: &str,
+    include_remotes: bool,
+    limit: u32,
+    skip: u32,
+) -> Result<HashMap<String, (u32, u32)>, String> {
     let limit_arg = format!("-n{limit}");
     let skip_arg = format!("--skip={skip}");
-    let output = run_git(
-        &repo_path,
-        &[
-            "log",
-            "--branches",
-            "--tags",
-            "HEAD",
-            "--date-order",
-            "--format=%H",
-            "--shortstat",
-            &limit_arg,
-            &skip_arg,
-        ],
-    )?;
+    let mut args = vec!["log", "--branches"];
+    if include_remotes {
+        args.push("--remotes");
+    }
+    args.extend([
+        "--tags",
+        "HEAD",
+        "--date-order",
+        "--format=%H",
+        "--shortstat",
+        &limit_arg,
+        &skip_arg,
+    ]);
+    let output = run_git(&repo_path, &args)?;
 
     let mut stats = HashMap::new();
     let mut current: Option<&str> = None;
@@ -200,15 +220,21 @@ fn get_commit_stats(repo_path: &str, limit: u32, skip: u32) -> Result<HashMap<St
     Ok(stats)
 }
 
-/// Deliberately `--branches --tags HEAD`, not `--all`: `--all` also walks
-/// `refs/remotes/*`, and stale remote-tracking refs for PR branches whose
-/// upstream was already deleted (common when the user hasn't run
-/// `git fetch --prune`) have no local branch to badge them, so they show up
-/// in the graph as unexplained parallel lanes that never visibly connect
-/// back to anything. Local branches + tags + HEAD is what actually has a
-/// badge in the UI, so it's what should open a lane.
-#[tauri::command]
-pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<CommitInfo>, String> {
+/// Explicit `--branches --remotes --tags HEAD` rather than `--all`: `--all`
+/// also walks refs outside those namespaces (e.g. `refs/stash`), which would
+/// open lanes nothing in the UI can badge. `--remotes` is on by default so
+/// teammates' branches with no local counterpart still appear — every
+/// remote-tracking ref gets an `origin/...` badge in the graph, including
+/// stale ones from unpruned fetches, so their lanes are labeled.
+/// `include_remotes: false` is the user-facing "hide remote-only lanes"
+/// toggle for when that's still too noisy.
+#[tauri::command(async)]
+pub fn list_commits(
+    repo_path: String,
+    include_remotes: bool,
+    limit: u32,
+    skip: u32,
+) -> Result<Vec<CommitInfo>, String> {
     // Co-authors come from the `Co-authored-by` trailer via git's own
     // %(trailers:...) placeholder, not a full body fetch — cheap to include
     // per-commit since it's usually empty, unlike pulling %b for everyone.
@@ -217,22 +243,23 @@ pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<Comm
     );
     let limit_arg = format!("-n{limit}");
     let skip_arg = format!("--skip={skip}");
-    let output = run_git(
-        &repo_path,
-        &[
-            "log",
-            "--branches",
-            "--tags",
-            "HEAD",
-            "--date-order",
-            &format!("--format={format}"),
-            "--date=iso-strict",
-            &limit_arg,
-            &skip_arg,
-        ],
-    )?;
+    let format_arg = format!("--format={format}");
+    let mut args = vec!["log", "--branches"];
+    if include_remotes {
+        args.push("--remotes");
+    }
+    args.extend([
+        "--tags",
+        "HEAD",
+        "--date-order",
+        format_arg.as_str(),
+        "--date=iso-strict",
+        &limit_arg,
+        &skip_arg,
+    ]);
+    let output = run_git(&repo_path, &args)?;
 
-    let stats = get_commit_stats(&repo_path, limit, skip).unwrap_or_default();
+    let stats = get_commit_stats(&repo_path, include_remotes, limit, skip).unwrap_or_default();
 
     let commits = output
         .split(RE)
@@ -270,7 +297,7 @@ pub fn list_commits(repo_path: String, limit: u32, skip: u32) -> Result<Vec<Comm
     Ok(commits)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_refs(repo_path: String) -> Result<Vec<RefInfo>, String> {
     let output = run_git(
         &repo_path,
@@ -333,7 +360,7 @@ fn status_code_to_name(code: &str) -> &'static str {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_commit_files(repo_path: String, sha: String) -> Result<Vec<FileChange>, String> {
     // Root commits have no parent; diff against the empty tree instead.
     let has_parent = run_git(&repo_path, &["rev-parse", &format!("{sha}^")]).is_ok();
@@ -378,7 +405,7 @@ pub fn get_commit_files(repo_path: String, sha: String) -> Result<Vec<FileChange
     Ok(files)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_commit_detail(repo_path: String, sha: String) -> Result<CommitDetail, String> {
     let format = format!("%H{RS}%an{RS}%ae{RS}%ad{RS}%cn{RS}%ce{RS}%cd{RS}%s{RS}%b");
     let output = run_git(
@@ -410,12 +437,12 @@ pub fn get_commit_detail(repo_path: String, sha: String) -> Result<CommitDetail,
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn current_branch(repo_path: String) -> Result<String, String> {
     run_git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]).map(|s| s.trim().to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_remotes(repo_path: String) -> Result<Vec<RemoteInfo>, String> {
     let output = run_git(&repo_path, &["remote", "-v"])?;
     let mut seen = std::collections::HashSet::new();
@@ -441,7 +468,7 @@ pub fn list_remotes(repo_path: String) -> Result<Vec<RemoteInfo>, String> {
     Ok(remotes)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_remote(repo_path: String, name: String, url: String) -> Result<String, String> {
     run_git(&repo_path, &["remote", "add", &name, &url])
 }
@@ -455,7 +482,7 @@ pub struct AheadBehind {
 /// How far `branch` and `upstream` (e.g. "main" and "origin/main") have
 /// diverged: `ahead` = commits on `branch` not on `upstream`, `behind` =
 /// commits on `upstream` not on `branch`.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ahead_behind(repo_path: String, branch: String, upstream: String) -> Result<AheadBehind, String> {
     let range = format!("{branch}...{upstream}");
     let output = run_git(&repo_path, &["rev-list", "--left-right", "--count", &range])?;
@@ -469,19 +496,19 @@ pub fn ahead_behind(repo_path: String, branch: String, upstream: String) -> Resu
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn fetch_all(repo_path: String) -> Result<String, String> {
     run_git(&repo_path, &["fetch", "--all", "--prune"])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pull(repo_path: String) -> Result<String, String> {
     run_git(&repo_path, &["pull"])
 }
 
 /// `force_mode`: None for a plain push, `Some("force")` or `Some("force-with-lease")`
 /// for the corresponding destructive push variant.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn push(repo_path: String, force_mode: Option<String>) -> Result<String, String> {
     let mut args = vec!["push"];
     match force_mode.as_deref() {
@@ -521,7 +548,7 @@ pub fn push(repo_path: String, force_mode: Option<String>) -> Result<String, Str
     run_git(&repo_path, &args)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stash_list(repo_path: String) -> Result<Vec<StashEntry>, String> {
     let output = run_git(&repo_path, &["stash", "list"])?;
 
@@ -540,7 +567,7 @@ pub fn stash_list(repo_path: String) -> Result<Vec<StashEntry>, String> {
     Ok(entries)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stash_push(repo_path: String, message: Option<String>) -> Result<String, String> {
     match &message {
         Some(m) => run_git(&repo_path, &["stash", "push", "-m", m]),
@@ -548,7 +575,7 @@ pub fn stash_push(repo_path: String, message: Option<String>) -> Result<String, 
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stash_pop(repo_path: String, index: Option<u32>) -> Result<String, String> {
     match index {
         Some(i) => {
@@ -561,17 +588,17 @@ pub fn stash_pop(repo_path: String, index: Option<u32>) -> Result<String, String
 
 /// Checks out a commit SHA or branch/tag name. For a bare SHA this leaves the
 /// repo in detached HEAD state, same as running `git checkout <sha>` by hand.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn checkout_ref(repo_path: String, ref_name: String) -> Result<String, String> {
     run_git(&repo_path, &["checkout", &ref_name])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_branch(repo_path: String, name: String, sha: String) -> Result<String, String> {
     run_git(&repo_path, &["branch", &name, &sha])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_branch(repo_path: String, name: String, force: bool) -> Result<String, String> {
     let flag = if force { "-D" } else { "-d" };
     run_git(&repo_path, &["branch", flag, &name])
@@ -582,7 +609,7 @@ pub fn delete_branch(repo_path: String, name: String, force: bool) -> Result<Str
 /// does not retarget tracking to a same-named remote branch. If that's
 /// needed (e.g. renaming to match a differently-named remote default), the
 /// user still pushes with `-u` afterward to point it there explicitly.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn rename_branch(repo_path: String, old_name: String, new_name: String) -> Result<String, String> {
     run_git(&repo_path, &["branch", "-m", &old_name, &new_name])
 }
@@ -591,17 +618,17 @@ pub fn rename_branch(repo_path: String, old_name: String, new_name: String) -> R
 /// Cannot force update the current branch"); repointing HEAD's own branch
 /// should go through `reset_to_commit` instead, which the UI already offers
 /// from the commit context menu.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn move_branch(repo_path: String, name: String, target: String) -> Result<String, String> {
     run_git(&repo_path, &["branch", "-f", &name, &target])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_upstream(repo_path: String, name: String, upstream: String) -> Result<String, String> {
     run_git(&repo_path, &["branch", "--set-upstream-to", &upstream, &name])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_remote_branch(repo_path: String, remote: String, name: String) -> Result<String, String> {
     run_git(&repo_path, &["push", &remote, "--delete", &name])
 }
@@ -613,18 +640,18 @@ pub fn delete_remote_branch(repo_path: String, remote: String, name: String) -> 
 /// metacharacter/quoting concern. It's still a broad hatch (any git
 /// subcommand), so the frontend is expected to only ever construct `args`
 /// from its own validated block selections, not free-text input.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn run_git_args(repo_path: String, args: Vec<String>) -> Result<String, String> {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_git(&repo_path, &arg_refs)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_tag(repo_path: String, name: String, sha: String) -> Result<String, String> {
     run_git(&repo_path, &["tag", &name, &sha])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_tag(repo_path: String, name: String) -> Result<String, String> {
     run_git(&repo_path, &["tag", "-d", &name])
 }
@@ -632,28 +659,28 @@ pub fn delete_tag(repo_path: String, name: String) -> Result<String, String> {
 /// A plain `git push <remote> <tag>` only pushes the tag ref itself, unlike
 /// `--tags` which pushes every tag in the repo — scoped to just the one the
 /// user asked for.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn push_tag(repo_path: String, remote: String, name: String) -> Result<String, String> {
     run_git(&repo_path, &["push", &remote, &name])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_remote_tag(repo_path: String, remote: String, name: String) -> Result<String, String> {
     run_git(&repo_path, &["push", &remote, "--delete", &name])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cherry_pick(repo_path: String, sha: String) -> Result<String, String> {
     run_git(&repo_path, &["cherry-pick", &sha])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn revert_commit(repo_path: String, sha: String) -> Result<String, String> {
     run_git(&repo_path, &["revert", "--no-edit", &sha])
 }
 
 /// `mode`: "soft", "mixed", or "hard" — matches the `git reset --<mode>` flag.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn reset_to_commit(repo_path: String, sha: String, mode: String) -> Result<String, String> {
     let flag = match mode.as_str() {
         "soft" => "--soft",
@@ -679,7 +706,7 @@ fn status_char_to_name(c: char) -> &'static str {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 /// Untracked files have no index/tree entry to diff against, so `git diff`
 /// can't report a line count for them; read the file directly instead
 /// (insertions = line count, deletions = 0). Best-effort: unreadable or
@@ -698,7 +725,7 @@ fn count_file_lines(repo_path: &str, path: &str) -> u32 {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn git_status(repo_path: String) -> Result<Vec<WorkingFileEntry>, String> {
     let output = run_git(
         &repo_path,
@@ -771,17 +798,17 @@ pub fn git_status(repo_path: String) -> Result<Vec<WorkingFileEntry>, String> {
     Ok(entries)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stage_path(repo_path: String, path: String) -> Result<String, String> {
     run_git(&repo_path, &["add", "--", &path])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn unstage_path(repo_path: String, path: String) -> Result<String, String> {
     run_git(&repo_path, &["restore", "--staged", "--", &path])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stage_paths(repo_path: String, paths: Vec<String>) -> Result<String, String> {
     if paths.is_empty() {
         return Ok(String::new());
@@ -791,7 +818,7 @@ pub fn stage_paths(repo_path: String, paths: Vec<String>) -> Result<String, Stri
     run_git(&repo_path, &args)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn unstage_paths(repo_path: String, paths: Vec<String>) -> Result<String, String> {
     if paths.is_empty() {
         return Ok(String::new());
@@ -801,17 +828,17 @@ pub fn unstage_paths(repo_path: String, paths: Vec<String>) -> Result<String, St
     run_git(&repo_path, &args)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stage_all(repo_path: String) -> Result<String, String> {
     run_git(&repo_path, &["add", "-A"])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn unstage_all(repo_path: String) -> Result<String, String> {
     run_git(&repo_path, &["restore", "--staged", "."])
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn commit(repo_path: String, message: String, amend: bool) -> Result<String, String> {
     if amend {
         run_git(&repo_path, &["commit", "--amend", "-m", &message])
@@ -823,7 +850,7 @@ pub fn commit(repo_path: String, message: String, amend: bool) -> Result<String,
 /// `staged` selects `diff --cached`; for unstaged changes, `untracked` picks
 /// between a plain working-tree diff (tracked file) and a `--no-index` diff
 /// against `/dev/null` (new file git has no record of yet).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_working_file_diff(
     repo_path: String,
     path: String,
@@ -839,7 +866,7 @@ pub fn get_working_file_diff(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_file_diff(repo_path: String, sha: String, file_path: String) -> Result<String, String> {
     let has_parent = run_git(&repo_path, &["rev-parse", &format!("{sha}^")]).is_ok();
 

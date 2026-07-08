@@ -157,6 +157,8 @@ function StashSplitButton({ hasChanges }: { hasChanges: boolean }) {
 
 function AdvancedMenuButton({ terminalOpen, onToggleTerminal }: ToolbarProps) {
   const busy = useActiveTab()?.busy ?? false;
+  const showRemoteBranches = useRepoStore((s) => s.showRemoteBranches);
+  const setShowRemoteBranches = useRepoStore((s) => s.setShowRemoteBranches);
   const [open, setOpen] = useState(false);
   const [remotesOpen, setRemotesOpen] = useState(false);
   const [branchManagerOpen, setBranchManagerOpen] = useState(false);
@@ -202,6 +204,16 @@ function AdvancedMenuButton({ terminalOpen, onToggleTerminal }: ToolbarProps) {
             }}
           >
             {terminalOpen ? "✓ Terminal" : "Terminal"}
+          </button>
+          <button
+            className="dropdown-item"
+            title="Show branches that exist only on a remote as their own lanes in the graph"
+            onClick={() => {
+              setOpen(false);
+              setShowRemoteBranches(!showRemoteBranches);
+            }}
+          >
+            {showRemoteBranches ? "✓ Remote branches" : "Remote branches"}
           </button>
           <div className="dropdown-separator" />
           <button

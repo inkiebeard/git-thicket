@@ -97,7 +97,7 @@ function RefBadges({
             r.kind === "tag"
               ? undefined
               : r.kind === "remote-branch"
-                ? `${r.name} on the remote — ahead of or diverged from the local branch of the same name`
+                ? `${r.name} on the remote — no local branch is on this commit`
                 : r.upstream
                   ? `Local branch "${r.name}" — upstream is ${r.upstream}`
                   : "local only, not published to a remote"

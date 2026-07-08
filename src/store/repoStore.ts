@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { getBackgroundFetchEnabled, getBackgroundFetchIntervalSec } from "../lib/backgroundFetchSettings";
 import {
+  getShowRemoteBranches,
+  setShowRemoteBranches as persistShowRemoteBranches,
+} from "../lib/graphSettings";
+import {
   type AheadBehind,
   type CommitDetail,
   type CommitInfo,
@@ -115,7 +119,9 @@ function makeTab(repoPath: string): RepoTab {
 interface RepoState {
   tabs: RepoTab[];
   activeRepoPath: string | null;
+  showRemoteBranches: boolean;
 
+  setShowRemoteBranches: (value: boolean) => void;
   restoreSession: () => Promise<void>;
   openRepo: (path: string) => Promise<void>;
   closeTab: (path: string) => void;
@@ -188,12 +194,26 @@ export const useRepoStore = create<RepoState>((set, get) => {
     }));
   }
 
-  async function loadWorkingStatus(repoPath: string) {
-    updateTab(repoPath, { loadingStatus: true });
+  // Cheap structural equality for the poll path: the API returns fresh
+  // arrays every call, so identity alone would say "changed" on every tick
+  // and re-render (and re-layout) the graph even when nothing moved.
+  function sameData(a: unknown, b: unknown): boolean {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  // `quiet` is the background-poll variant: no loadingStatus flip (which
+  // would flicker spinners every tick), no error toast (a failed unattended
+  // poll shouldn't nag), and no state write when nothing changed.
+  async function loadWorkingStatus(repoPath: string, quiet = false) {
+    if (!quiet) updateTab(repoPath, { loadingStatus: true });
     try {
       const workingStatus = await gitStatus(repoPath);
+      const tab = get().tabs.find((t) => t.repoPath === repoPath);
+      if (!tab) return;
+      if (quiet && sameData(workingStatus, tab.workingStatus)) return;
       updateTab(repoPath, { workingStatus, loadingStatus: false });
     } catch (e) {
+      if (quiet) return;
       updateTab(repoPath, {
         loadingStatus: false,
         toast: { id: toastId++, kind: "error", text: String(e), action: "Load status" },
@@ -207,11 +227,13 @@ export const useRepoStore = create<RepoState>((set, get) => {
     const tab = get().tabs.find((t) => t.repoPath === repoPath);
     const upstream = tab?.refs.find((r) => r.kind === "head")?.upstream ?? null;
     if (!tab?.branch || !upstream) {
-      updateTab(repoPath, { aheadBehind: null });
+      if (tab?.aheadBehind !== null) updateTab(repoPath, { aheadBehind: null });
       return;
     }
     try {
       const result = await fetchAheadBehind(repoPath, tab.branch, upstream);
+      const current = get().tabs.find((t) => t.repoPath === repoPath)?.aheadBehind;
+      if (sameData(result, current)) return;
       updateTab(repoPath, { aheadBehind: result });
     } catch {
       updateTab(repoPath, { aheadBehind: null });
@@ -222,7 +244,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
     updateTab(repoPath, { loadingCommits: true, error: null });
     try {
       const [commits, refs, branch, remotes] = await Promise.all([
-        listCommits(repoPath),
+        listCommits(repoPath, get().showRemoteBranches),
         listRefs(repoPath),
         currentBranch(repoPath),
         listRemotes(repoPath).catch(() => []),
@@ -241,34 +263,50 @@ export const useRepoStore = create<RepoState>((set, get) => {
   // background refresh so an unattended tab doesn't flash "Loading commits…"
   // and blank its graph every 30s. Silently gives up on failure (e.g. no
   // network) rather than surfacing an error for a poll nobody asked to see.
+  // Only writes the fields that actually changed, so a no-news poll (the
+  // common case) causes zero re-renders.
   async function loadTabDataQuiet(repoPath: string) {
     try {
       const [commits, refs, branch, remotes] = await Promise.all([
-        listCommits(repoPath),
+        listCommits(repoPath, get().showRemoteBranches),
         listRefs(repoPath),
         currentBranch(repoPath),
         listRemotes(repoPath).catch(() => []),
       ]);
-      updateTab(repoPath, { commits, refs, branch, remotes });
+      const tab = get().tabs.find((t) => t.repoPath === repoPath);
+      if (!tab) return;
+      const patch: Partial<RepoTab> = {};
+      if (!sameData(commits, tab.commits)) patch.commits = commits;
+      if (!sameData(refs, tab.refs)) patch.refs = refs;
+      if (branch !== tab.branch) patch.branch = branch;
+      if (!sameData(remotes, tab.remotes)) patch.remotes = remotes;
+      if (Object.keys(patch).length > 0) updateTab(repoPath, patch);
       loadAheadBehind(repoPath);
     } catch {
       return;
     }
-    loadWorkingStatus(repoPath);
+    loadWorkingStatus(repoPath, true);
   }
 
   // Polls each open tab's remote so ahead/behind and incoming refs stay
   // current without the user having to click Fetch. Skips a tab that's
-  // mid-action (busy) or has no remote configured.
+  // mid-action (busy), has no remote configured, or whose previous poll is
+  // still running — a fetch that outlasts the interval (slow network, short
+  // interval) must not stack a second fetch on top of itself.
+  const backgroundFetchInFlight = new Set<string>();
   async function backgroundFetch(repoPath: string) {
     const tab = get().tabs.find((t) => t.repoPath === repoPath);
     if (!tab || tab.busy || tab.remotes.length === 0) return;
+    if (backgroundFetchInFlight.has(repoPath)) return;
+    backgroundFetchInFlight.add(repoPath);
     try {
       await fetchAll(repoPath);
+      await loadTabDataQuiet(repoPath);
     } catch {
-      return;
+      // Unattended poll — nothing to surface.
+    } finally {
+      backgroundFetchInFlight.delete(repoPath);
     }
-    await loadTabDataQuiet(repoPath);
   }
 
   // Self-rescheduling rather than setInterval so a change to the configured
@@ -326,6 +364,18 @@ export const useRepoStore = create<RepoState>((set, get) => {
   return {
     tabs: [],
     activeRepoPath: null,
+    showRemoteBranches: getShowRemoteBranches(),
+
+    // Global (not per-tab): reloads every open tab quietly, so the graphs
+    // swap to the new ref set in place instead of blanking behind a
+    // "Loading commits…" state.
+    setShowRemoteBranches: (value: boolean) => {
+      persistShowRemoteBranches(value);
+      set({ showRemoteBranches: value });
+      for (const tab of get().tabs) {
+        loadTabDataQuiet(tab.repoPath);
+      }
+    },
 
     restoreSession: async () => {
       const paths = loadSavedTabPaths();

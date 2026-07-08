@@ -67,10 +67,16 @@ export async function isGitRepo(repoPath: string): Promise<boolean> {
 
 export async function listCommits(
   repoPath: string,
+  includeRemotes: boolean,
   limit = 500,
   skip = 0,
 ): Promise<CommitInfo[]> {
-  const raw = await invoke<RawCommitInfo[]>("list_commits", { repoPath, limit, skip });
+  const raw = await invoke<RawCommitInfo[]>("list_commits", {
+    repoPath,
+    includeRemotes,
+    limit,
+    skip,
+  });
   return raw.map((c) => ({
     hash: c.hash,
     parents: c.parents,
