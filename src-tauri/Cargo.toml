@@ -1,6 +1,6 @@
 [package]
 name = "thicket"
-version = "0.1.0"
+version = "0.2.0"
 description = "A lightweight, cross-platform git tree viewer"
 authors = ["you"]
 edition = "2021"
