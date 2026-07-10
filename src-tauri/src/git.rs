@@ -679,6 +679,21 @@ pub fn revert_commit(repo_path: String, sha: String) -> Result<String, String> {
     run_git(&repo_path, &["revert", "--no-edit", &sha])
 }
 
+/// Fast-forwards the currently checked-out branch to `target_ref`. Fails
+/// (rather than falling back to a merge commit) if the current branch has
+/// diverged, since the whole point of offering this as a distinct choice
+/// from "Rebase" is that it only ever moves the branch pointer.
+#[tauri::command(async)]
+pub fn fast_forward_branch(repo_path: String, target_ref: String) -> Result<String, String> {
+    run_git(&repo_path, &["merge", "--ff-only", &target_ref])
+}
+
+/// Rebases the currently checked-out branch onto `target_ref`.
+#[tauri::command(async)]
+pub fn rebase_branch(repo_path: String, target_ref: String) -> Result<String, String> {
+    run_git(&repo_path, &["rebase", &target_ref])
+}
+
 /// `mode`: "soft", "mixed", or "hard" — matches the `git reset --<mode>` flag.
 #[tauri::command(async)]
 pub fn reset_to_commit(repo_path: String, sha: String, mode: String) -> Result<String, String> {
@@ -796,6 +811,26 @@ pub fn git_status(repo_path: String) -> Result<Vec<WorkingFileEntry>, String> {
     }
 
     Ok(entries)
+}
+
+/// Reads a working-tree file's raw text content, for the conflict-resolution
+/// editor — which needs the file's own `<<<<<<<`/`=======`/`>>>>>>>` markers
+/// as git left them, not a diff against either side.
+#[tauri::command(async)]
+pub fn read_working_file(repo_path: String, path: String) -> Result<String, String> {
+    let full_path = std::path::Path::new(&repo_path).join(&path);
+    let bytes = std::fs::read(&full_path).map_err(|e| format!("failed to read {path}: {e}"))?;
+    String::from_utf8(bytes).map_err(|_| format!("{path} is not valid UTF-8 text"))
+}
+
+/// Writes the resolved content back to the working-tree file and stages it —
+/// `git add` on a path that was in a conflicted (unmerged) state clears its
+/// conflict stages the same way it would for any other edit.
+#[tauri::command(async)]
+pub fn resolve_conflict(repo_path: String, path: String, content: String) -> Result<String, String> {
+    let full_path = std::path::Path::new(&repo_path).join(&path);
+    std::fs::write(&full_path, content).map_err(|e| format!("failed to write {path}: {e}"))?;
+    run_git(&repo_path, &["add", "--", &path])
 }
 
 #[tauri::command(async)]

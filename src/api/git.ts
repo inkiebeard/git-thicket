@@ -339,6 +339,14 @@ export async function resetToCommit(
   return invoke<string>("reset_to_commit", { repoPath, sha, mode });
 }
 
+export async function fastForwardBranch(repoPath: string, targetRef: string): Promise<string> {
+  return invoke<string>("fast_forward_branch", { repoPath, targetRef });
+}
+
+export async function rebaseBranch(repoPath: string, targetRef: string): Promise<string> {
+  return invoke<string>("rebase_branch", { repoPath, targetRef });
+}
+
 export interface WorkingFileEntry {
   path: string;
   oldPath: string | null;
@@ -407,6 +415,18 @@ export async function commitChanges(
   amend = false,
 ): Promise<string> {
   return invoke<string>("commit", { repoPath, message, amend });
+}
+
+export async function readWorkingFile(repoPath: string, path: string): Promise<string> {
+  return invoke<string>("read_working_file", { repoPath, path });
+}
+
+export async function resolveConflict(
+  repoPath: string,
+  path: string,
+  content: string,
+): Promise<string> {
+  return invoke<string>("resolve_conflict", { repoPath, path, content });
 }
 
 export async function getWorkingFileDiff(

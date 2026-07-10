@@ -8,6 +8,7 @@ import { useResizableWidths } from "../lib/useResizableWidths";
 import { layoutGraph, maxLane, withGhostCommit, type GraphNode } from "../lib/graphLayout";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { CommitContextMenu } from "./CommitContextMenu";
+import { ReconcileBranchDialog } from "./ReconcileBranchDialog";
 import { RefContextMenu } from "./RefContextMenu";
 import { ResizeHandle } from "./ResizeHandle";
 
@@ -73,12 +74,25 @@ function visibleRefs(refs: RefInfo[]): RefInfo[] {
   });
 }
 
+/** Finds the local branch (checked out or not) whose upstream is `remoteRef.name`. */
+function findLocalTrackingBranch(refs: RefInfo[], remoteRef: RefInfo): RefInfo | null {
+  return (
+    refs.find(
+      (r) => (r.kind === "branch" || r.kind === "head") && r.upstream === remoteRef.name,
+    ) ?? null
+  );
+}
+
 function RefBadges({
   refs,
+  allRefs,
   onRefContextMenu,
+  onRefDoubleClick,
 }: {
   refs: RefInfo[];
+  allRefs: RefInfo[];
   onRefContextMenu: (e: React.MouseEvent, ref: RefInfo) => void;
+  onRefDoubleClick: (ref: RefInfo) => void;
 }) {
   const badges = refs.filter(
     (r) => r.kind === "branch" || r.kind === "tag" || r.kind === "head" || r.kind === "remote-branch",
@@ -97,15 +111,24 @@ function RefBadges({
             r.kind === "tag"
               ? undefined
               : r.kind === "remote-branch"
-                ? `${r.name} on the remote — no local branch is on this commit`
-                : r.upstream
-                  ? `Local branch "${r.name}" — upstream is ${r.upstream}`
-                  : "local only, not published to a remote"
+                ? findLocalTrackingBranch(allRefs, r)
+                  ? `${r.name} — double-click to fast-forward, rebase, or reset the local branch`
+                  : `${r.name} on the remote — no local branch is on this commit; double-click to check it out`
+                : r.kind === "branch"
+                  ? `Local branch "${r.name}" — double-click to check out${r.upstream ? `; upstream is ${r.upstream}` : ""}`
+                  : r.upstream
+                    ? `Local branch "${r.name}" — upstream is ${r.upstream}`
+                    : "local only, not published to a remote"
           }
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
             onRefContextMenu(e, r);
+          }}
+          onDoubleClick={(e) => {
+            if (r.kind !== "branch" && r.kind !== "remote-branch") return;
+            e.stopPropagation();
+            onRefDoubleClick(r);
           }}
         >
           {r.name}
@@ -314,8 +337,13 @@ export function CommitGraph() {
   const viewingWorkingTree = activeTab?.viewingWorkingTree ?? false;
   const selectCommit = useRepoStore((s) => s.selectCommit);
   const selectWorkingTree = useRepoStore((s) => s.selectWorkingTree);
+  const doCheckoutRef = useRepoStore((s) => s.doCheckoutRef);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [refMenu, setRefMenu] = useState<RefMenuState | null>(null);
+  const [reconcileTarget, setReconcileTarget] = useState<{
+    localBranch: RefInfo;
+    remoteRef: RefInfo;
+  } | null>(null);
   const [dragKey, setDragKey] = useState<ColumnKey | null>(null);
   const [showChanges, setShowChanges] = usePersistedBoolean(true, "thicket:showChangeCounts");
 
@@ -366,6 +394,21 @@ export function CommitGraph() {
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
   });
+
+  function handleRefDoubleClick(ref: RefInfo) {
+    if (ref.kind === "branch") {
+      doCheckoutRef(ref.name);
+      return;
+    }
+    if (ref.kind === "remote-branch") {
+      const localBranch = findLocalTrackingBranch(refs, ref);
+      if (localBranch) {
+        setReconcileTarget({ localBranch, remoteRef: ref });
+      } else {
+        doCheckoutRef(ref.name);
+      }
+    }
+  }
 
   function handleHeaderDragStart(key: ColumnKey) {
     return (e: DragEvent) => {
@@ -497,9 +540,11 @@ export function CommitGraph() {
                   <div className="commit-refs-cell" style={{ width: refsWidth }}>
                     <RefBadges
                       refs={commitRefs}
+                      allRefs={refs}
                       onRefContextMenu={(e, ref) =>
                         setRefMenu({ x: e.clientX, y: e.clientY, ref })
                       }
+                      onRefDoubleClick={handleRefDoubleClick}
                     />
                   </div>
                   <svg width={graphWidth} height={ROW_HEIGHT} className="commit-graph-svg">
@@ -536,6 +581,13 @@ export function CommitGraph() {
           ref={refMenu.ref}
           remotes={remotes.map((r) => r.name)}
           onClose={() => setRefMenu(null)}
+        />
+      )}
+      {reconcileTarget && (
+        <ReconcileBranchDialog
+          localBranch={reconcileTarget.localBranch}
+          remoteRef={reconcileTarget.remoteRef}
+          onClose={() => setReconcileTarget(null)}
         />
       )}
     </div>

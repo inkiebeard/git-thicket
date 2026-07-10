@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { FileChange, FileStatus, WorkingFileEntry } from "../api/git";
+import { isConflicted } from "../lib/conflicts";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
+import { ConflictResolutionDialog } from "./ConflictResolutionDialog";
 
 const STATUS_LABEL: Record<string, string> = {
   added: "A",
@@ -70,12 +72,19 @@ function WorkingFileRow({
   const status = staged ? entry.indexStatus : entry.worktreeStatus;
   const insertions = staged ? entry.indexInsertions : entry.worktreeInsertions;
   const deletions = staged ? entry.indexDeletions : entry.worktreeDeletions;
+  const conflicted = isConflicted(entry);
 
   return (
     <button
-      className={`file-row${isSelected ? " selected" : ""}`}
+      className={`file-row${isSelected ? " selected" : ""}${conflicted ? " file-row-conflict" : ""}`}
       onClick={onSelect}
-      title={entry.oldPath ? `${entry.oldPath} → ${entry.path}` : entry.path}
+      title={
+        conflicted
+          ? `${entry.path} has a merge conflict — click to resolve`
+          : entry.oldPath
+            ? `${entry.oldPath} → ${entry.path}`
+            : entry.path
+      }
     >
       <StatusBadge status={status} />
       <span className="file-row-path">
@@ -107,6 +116,7 @@ const EMPTY_MULTI_SELECT: MultiSelect = { staged: false, paths: new Set(), ancho
 
 function WorkingFileList() {
   const activeTab = useActiveTab();
+  const repoPath = activeTab?.repoPath ?? "";
   const workingStatus = activeTab?.workingStatus ?? [];
   const stageAllFiles = useRepoStore((s) => s.stageAllFiles);
   const unstageAllFiles = useRepoStore((s) => s.unstageAllFiles);
@@ -117,6 +127,7 @@ function WorkingFileList() {
   const selectWorkingFile = useRepoStore((s) => s.selectWorkingFile);
 
   const [multi, setMulti] = useState<MultiSelect>(EMPTY_MULTI_SELECT);
+  const [conflictPath, setConflictPath] = useState<string | null>(null);
 
   const staged = workingStatus.filter((f) => f.indexStatus !== "none");
   const unstaged = workingStatus.filter((f) => f.worktreeStatus !== "none");
@@ -210,7 +221,9 @@ function WorkingFileList() {
                 entry={f}
                 staged
                 isMultiSelected={multi.staged === true && multi.paths.size > 1 && multi.paths.has(f.path)}
-                onSelect={handleSelect(f.path, true, stagedPaths)}
+                onSelect={
+                  isConflicted(f) ? () => setConflictPath(f.path) : handleSelect(f.path, true, stagedPaths)
+                }
                 onToggleStage={handleToggleStage(f.path, true)}
               />
             ))
@@ -246,13 +259,24 @@ function WorkingFileList() {
                 entry={f}
                 staged={false}
                 isMultiSelected={multi.staged === false && multi.paths.size > 1 && multi.paths.has(f.path)}
-                onSelect={handleSelect(f.path, false, unstagedPaths)}
+                onSelect={
+                  isConflicted(f)
+                    ? () => setConflictPath(f.path)
+                    : handleSelect(f.path, false, unstagedPaths)
+                }
                 onToggleStage={handleToggleStage(f.path, false)}
               />
             ))
           )}
         </div>
       </div>
+      {conflictPath && (
+        <ConflictResolutionDialog
+          repoPath={repoPath}
+          path={conflictPath}
+          onClose={() => setConflictPath(null)}
+        />
+      )}
     </div>
   );
 }

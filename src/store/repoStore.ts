@@ -26,6 +26,7 @@ import {
   deleteRemoteBranch,
   deleteRemoteTag,
   deleteTag,
+  fastForwardBranch,
   fetchAll,
   getCommitDetail,
   getCommitFiles,
@@ -38,8 +39,10 @@ import {
   pull,
   push,
   pushTag,
+  rebaseBranch,
   renameBranch,
   resetToCommit,
+  resolveConflict,
   revertCommit,
   setUpstream,
   stageAll,
@@ -165,6 +168,9 @@ interface RepoState {
   doCherryPick: (sha: string) => Promise<void>;
   doRevertCommit: (sha: string) => Promise<void>;
   doResetToCommit: (sha: string, mode: ResetMode) => Promise<void>;
+  doFastForwardBranch: (targetRef: string) => Promise<void>;
+  doRebaseBranch: (targetRef: string) => Promise<void>;
+  doResolveConflict: (path: string, content: string) => Promise<void>;
 }
 
 const OPEN_TABS_KEY = "thicket:openTabs";
@@ -718,6 +724,28 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runAction(activeRepoPath, "Reset", () => resetToCommit(activeRepoPath, sha, mode));
+    },
+
+    doFastForwardBranch: async (targetRef: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Fast-forward", () =>
+        fastForwardBranch(activeRepoPath, targetRef),
+      );
+    },
+
+    doRebaseBranch: async (targetRef: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Rebase", () => rebaseBranch(activeRepoPath, targetRef));
+    },
+
+    doResolveConflict: async (path: string, content: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Resolve conflict", () =>
+        resolveConflict(activeRepoPath, path, content),
+      );
     },
   };
 });
