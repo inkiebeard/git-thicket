@@ -5,7 +5,7 @@ import { useColumnOrder } from "../lib/useColumnOrder";
 import { useColumnWidths } from "../lib/useColumnWidths";
 import { usePersistedBoolean } from "../lib/usePersistedBoolean";
 import { useResizableWidths } from "../lib/useResizableWidths";
-import { layoutGraph, maxLane, withGhostCommit, type GraphNode } from "../lib/graphLayout";
+import { layoutGraph, maxLane, withGhostCommit, withStashNodes, type GraphNode } from "../lib/graphLayout";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { CommitContextMenu } from "./CommitContextMenu";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -156,41 +156,6 @@ function RefBadges({
   );
 }
 
-function StashBadges({
-  stashes,
-  onStashClick,
-  onStashContextMenu,
-}: {
-  stashes: StashEntry[];
-  onStashClick: (stash: StashEntry) => void;
-  onStashContextMenu: (e: React.MouseEvent, stash: StashEntry) => void;
-}) {
-  if (stashes.length === 0) return null;
-
-  return (
-    <span className="commit-refs">
-      {stashes.map((s) => (
-        <span
-          key={s.index}
-          className="ref-badge ref-stash"
-          title={`stash@{${s.index}}: ${s.message} — click to show diff, right-click for more`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onStashClick(s);
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onStashContextMenu(e, s);
-          }}
-        >
-          stash@{"{" + s.index + "}"}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 function RowGraphic({ node }: { node: GraphNode }) {
   const midY = ROW_HEIGHT / 2;
 
@@ -237,7 +202,7 @@ function RowGraphic({ node }: { node: GraphNode }) {
           strokeDasharray={p.dashed ? "3 3" : undefined}
         />
       ))}
-      {node.isGhost ? (
+      {node.isGhost || node.isStash ? (
         <circle
           cx={laneX(node.lane)}
           cy={midY}
@@ -255,7 +220,7 @@ function RowGraphic({ node }: { node: GraphNode }) {
           fill={laneColorVar(node.color)}
         />
       )}
-      {!node.isGhost && (
+      {!node.isGhost && !node.isStash && (
         // Invisible, larger hit area layered on top — the visible dot alone
         // (4px radius) is too small a target to reliably hover for the
         // author/co-author tooltip.
@@ -371,6 +336,42 @@ function GhostDataCell({
   }
 }
 
+function StashDataCell({
+  columnKey,
+  stash,
+  width,
+}: {
+  columnKey: ColumnKey;
+  stash: StashEntry;
+  width: number;
+}) {
+  switch (columnKey) {
+    case "message":
+      return (
+        <div
+          className="commit-subject commit-stash-label"
+          data-col="message"
+          title={stash.message}
+          style={{ width, flexShrink: 0 }}
+        >
+          {stash.message}
+        </div>
+      );
+    case "sha":
+      return (
+        <div className="commit-hash commit-stash-count" data-col="sha" style={{ width }}>
+          stash@{"{" + stash.index + "}"}
+        </div>
+      );
+    case "changes":
+      return <div className="commit-changes" data-col="changes" style={{ width }} />;
+    case "date":
+      return <div className="commit-date" data-col="date" style={{ width }} />;
+    case "author":
+      return <div className="commit-author" data-col="author" style={{ width }} />;
+  }
+}
+
 interface MenuState {
   x: number;
   y: number;
@@ -436,16 +437,6 @@ export function CommitGraph() {
   const refsWidth = refsWidths[0];
 
   const refMap = useMemo(() => refsByHash(visibleRefs(refs)), [refs]);
-  const stashesByHash = useMemo(() => {
-    const map = new Map<string, StashEntry[]>();
-    for (const s of stashes) {
-      if (!s.baseHash) continue;
-      const list = map.get(s.baseHash) ?? [];
-      list.push(s);
-      map.set(s.baseHash, list);
-    }
-    return map;
-  }, [stashes]);
   const headHash = useMemo(() => refs.find((r) => r.kind === "head")?.hash ?? null, [refs]);
   const changedFileCount = useMemo(() => {
     const paths = new Set<string>();
@@ -456,12 +447,12 @@ export function CommitGraph() {
   }, [workingStatus]);
 
   const nodes = useMemo(() => {
-    const base = layoutGraph(commits);
+    let base = layoutGraph(commits);
     if (changedFileCount > 0 && headHash) {
-      return withGhostCommit(base, headHash, "Uncommitted changes");
+      base = withGhostCommit(base, headHash, "Uncommitted changes");
     }
-    return base;
-  }, [commits, changedFileCount, headHash]);
+    return withStashNodes(base, stashes);
+  }, [commits, changedFileCount, headHash, stashes]);
   // Natural width the graph needs to show every lane unclipped — grows
   // unbounded with branch count, so it's also used as the auto-fit target
   // and as the initial value of the (separately capped) column width below.
@@ -699,8 +690,38 @@ export function CommitGraph() {
                 );
               }
 
+              if (node.isStash && node.stash) {
+                const stash = node.stash;
+                return (
+                  <div
+                    key={node.commit.hash}
+                    className="commit-row commit-row-stash"
+                    style={rowStyle}
+                    onClick={() => showStashDiff(stash)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setStashMenu({ x: e.clientX, y: e.clientY, stash });
+                    }}
+                  >
+                    <div className="commit-refs-cell" style={{ width: refsWidth }} />
+                    <div className="commit-graph-cell" style={{ width: graphColWidth }}>
+                      <svg width={graphWidth} height={ROW_HEIGHT} className="commit-graph-svg">
+                        <RowGraphic node={node} />
+                      </svg>
+                    </div>
+                    {order.map((key) => (
+                      <StashDataCell
+                        key={key}
+                        columnKey={key}
+                        stash={stash}
+                        width={colWidths[key]}
+                      />
+                    ))}
+                  </div>
+                );
+              }
+
               const commitRefs = refMap.get(node.commit.hash) ?? [];
-              const commitStashes = stashesByHash.get(node.commit.hash) ?? [];
               const isSelected = node.commit.hash === selectedSha;
               return (
                 <div
@@ -726,13 +747,6 @@ export function CommitGraph() {
                         setRefMenu({ x: e.clientX, y: e.clientY, ref })
                       }
                       onRefDoubleClick={handleRefDoubleClick}
-                    />
-                    <StashBadges
-                      stashes={commitStashes}
-                      onStashClick={showStashDiff}
-                      onStashContextMenu={(e, stash) =>
-                        setStashMenu({ x: e.clientX, y: e.clientY, stash })
-                      }
                     />
                   </div>
                   <div className="commit-graph-cell" style={{ width: graphColWidth }}>

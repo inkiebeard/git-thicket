@@ -957,16 +957,6 @@ body {
   font-weight: 600;
 }
 
-/* Stashes based on this commit — not a real ref, so kept visually distinct
-   (dashed, off-palette) from branch/tag/head badges; click to preview its
-   diff, right-click for pop/drop. */
-.ref-badge.ref-stash {
-  background: transparent;
-  border: 1px dashed var(--lane-4);
-  color: var(--lane-4);
-  cursor: pointer;
-}
-
 .commit-subject {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1030,6 +1020,29 @@ body {
 
 .commit-ghost-count {
   color: var(--text-1) !important;
+  font-style: normal;
+}
+
+/* Stash row: a synthetic commit branching off its base commit (see
+   withStashNodes in graphLayout.ts) — clickable to preview the diff,
+   right-clickable for pop/drop. Styled off-palette like the ref-stash
+   badge so it doesn't read as a real commit. */
+
+.commit-row-stash {
+  font-style: italic;
+  cursor: pointer;
+}
+
+.commit-row-stash:hover {
+  background: var(--bg-2);
+}
+
+.commit-stash-label {
+  color: var(--lane-4) !important;
+}
+
+.commit-stash-count {
+  color: var(--lane-4) !important;
   font-style: normal;
 }
 

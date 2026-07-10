@@ -1,4 +1,4 @@
-import type { CommitInfo } from "../api/git";
+import type { CommitInfo, StashEntry } from "../api/git";
 
 export interface GraphNode {
   commit: CommitInfo;
@@ -21,6 +21,9 @@ export interface GraphNode {
   convergingLanes: { lane: number; color: number }[];
   /** A synthetic row representing uncommitted changes, not a real commit. */
   isGhost?: boolean;
+  /** A synthetic row representing a stash entry, not a real commit. */
+  isStash?: boolean;
+  stash?: StashEntry;
 }
 
 export const LANE_COLORS = 12;
@@ -184,6 +187,84 @@ export function withGhostCommit(
   const result = [...nodes];
   result[headIdx] = { ...headNode, hasIncoming: true, incomingDashed: true };
   result.splice(headIdx, 0, ghost);
+  return result;
+}
+
+/**
+ * Inserts a synthetic row for each stash directly above the commit it was
+ * created from, each in its own lane (a stash isn't part of any branch's
+ * ancestry, so it can't just extend the base commit's lane the way the
+ * ghost commit extends HEAD's) with a diagonal line converging into the
+ * base commit's dot. Stashes whose base commit isn't in `nodes` (out of the
+ * loaded window, or the base was since rebased away) are silently skipped.
+ */
+export function withStashNodes(nodes: GraphNode[], stashes: StashEntry[]): GraphNode[] {
+  if (stashes.length === 0) return nodes;
+
+  const baseIndexOf = new Map<string, number>();
+  nodes.forEach((n, i) => baseIndexOf.set(n.commit.hash, i));
+
+  const byBaseIdx = new Map<number, StashEntry[]>();
+  for (const s of stashes) {
+    const idx = s.baseHash ? baseIndexOf.get(s.baseHash) : undefined;
+    if (idx === undefined) continue;
+    const list = byBaseIdx.get(idx) ?? [];
+    list.push(s);
+    byBaseIdx.set(idx, list);
+  }
+  if (byBaseIdx.size === 0) return nodes;
+
+  let nextLane = maxLane(nodes) + 1;
+  const result: GraphNode[] = [];
+
+  nodes.forEach((node, i) => {
+    const stashesHere = byBaseIdx.get(i);
+    if (!stashesHere) {
+      result.push(node);
+      return;
+    }
+
+    const stashLanes = stashesHere.map((stash) => ({
+      stash,
+      lane: nextLane++,
+      color: (nextLane - 1) % LANE_COLORS,
+    }));
+
+    stashLanes.forEach(({ stash, lane, color }, j) => {
+      // Lanes for stashes on the same base that sit below this one in the
+      // list still need to pass through this row on their way down to it.
+      const laterLanes = stashLanes.slice(j + 1).map((sl) => ({ lane: sl.lane, color: sl.color }));
+      result.push({
+        commit: {
+          hash: `__stash_${stash.index}__`,
+          parents: [node.commit.hash],
+          author: "",
+          date: "",
+          subject: stash.message,
+          coAuthors: [],
+          insertions: 0,
+          deletions: 0,
+        },
+        lane,
+        color,
+        parentLanes: [{ parentHash: node.commit.hash, lane, color, dashed: true }],
+        passThroughLanes: [...node.passThroughLanes, ...laterLanes],
+        hasIncoming: false,
+        convergingLanes: [],
+        isStash: true,
+        stash,
+      });
+    });
+
+    result.push({
+      ...node,
+      convergingLanes: [
+        ...node.convergingLanes,
+        ...stashLanes.map(({ lane, color }) => ({ lane, color })),
+      ],
+    });
+  });
+
   return result;
 }
 
