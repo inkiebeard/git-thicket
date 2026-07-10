@@ -21,9 +21,17 @@ export function BranchManager({ onClose }: BranchManagerProps) {
 
   const refs = activeTab?.refs ?? [];
   const currentBranch = refs.find((r) => r.kind === "head")?.name ?? null;
-  const localBranches = refs.filter((r) => r.kind === "branch" || r.kind === "head");
-  const remoteBranches = refs.filter((r) => r.kind === "remote-branch");
-  const remoteBranchNames = remoteBranches.map((r) => r.name);
+  const [filter, setFilter] = useState("");
+  const query = filter.trim().toLowerCase();
+  const matchesFilter = (name: string) => !query || name.toLowerCase().includes(query);
+  const localBranches = refs
+    .filter((r) => r.kind === "branch" || r.kind === "head")
+    .filter((r) => matchesFilter(r.name));
+  const remoteBranches = refs
+    .filter((r) => r.kind === "remote-branch")
+    .filter((r) => matchesFilter(r.name));
+  // Unfiltered, so repoint/upstream suggestions always offer every remote branch.
+  const remoteBranchNames = refs.filter((r) => r.kind === "remote-branch").map((r) => r.name);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
@@ -39,6 +47,20 @@ export function BranchManager({ onClose }: BranchManagerProps) {
     <ModalOverlay onClose={onClose}>
       <div className="modal modal-wide">
         <div className="modal-title">Branches</div>
+
+        <input
+          className="modal-input branch-filter-input"
+          placeholder="Filter branches…"
+          autoFocus
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              if (filter) setFilter("");
+              else onClose();
+            }
+          }}
+        />
 
         <div className="branch-section-header">
           <span>Local</span>
@@ -85,7 +107,9 @@ export function BranchManager({ onClose }: BranchManagerProps) {
             );
           })}
           {localBranches.length === 0 && (
-            <div className="branch-list-empty">No local branches</div>
+            <div className="branch-list-empty">
+              {query ? "No local branches match" : "No local branches"}
+            </div>
           )}
         </div>
 
@@ -114,7 +138,9 @@ export function BranchManager({ onClose }: BranchManagerProps) {
             );
           })}
           {remoteBranches.length === 0 && (
-            <div className="branch-list-empty">No remote-tracking branches</div>
+            <div className="branch-list-empty">
+              {query ? "No remote branches match" : "No remote-tracking branches"}
+            </div>
           )}
         </div>
 
