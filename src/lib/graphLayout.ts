@@ -243,7 +243,10 @@ export function withStashNodes(nodes: GraphNode[], stashes: StashEntry[]): Graph
       const laterLanes = stashLanes.slice(j + 1).map((sl) => ({ lane: sl.lane, color: sl.color }));
       result.push({
         commit: {
-          hash: `__stash_${stash.index}__`,
+          // A real revision git understands directly (not a placeholder) —
+          // lets the stash row reuse the exact same commit-detail/diff
+          // pipeline as a normal commit, just by selecting this "sha".
+          hash: `stash@{${stash.index}}`,
           parents: [node.commit.hash],
           author: "",
           date: "",

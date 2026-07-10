@@ -692,12 +692,13 @@ export function CommitGraph() {
 
               if (node.isStash && node.stash) {
                 const stash = node.stash;
+                const isSelected = node.commit.hash === selectedSha;
                 return (
                   <div
                     key={node.commit.hash}
-                    className="commit-row commit-row-stash"
+                    className={`commit-row commit-row-stash${isSelected ? " selected" : ""}`}
                     style={rowStyle}
-                    onClick={() => showStashDiff(stash)}
+                    onClick={() => selectCommit(node.commit.hash)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       setStashMenu({ x: e.clientX, y: e.clientY, stash });
