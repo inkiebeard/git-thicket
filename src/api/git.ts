@@ -23,7 +23,9 @@ interface RawCommitInfo {
   co_authors: string[];
 }
 
-export type RefKind = "branch" | "remote-branch" | "tag" | "head" | "other";
+// "worktree-head" is never produced by the backend — it's a client-only
+// synthetic kind for a detached-HEAD worktree's commit, see worktreeHeadRefs().
+export type RefKind = "branch" | "remote-branch" | "tag" | "head" | "other" | "worktree-head";
 
 export interface RefInfo {
   name: string;
@@ -91,6 +93,18 @@ export async function listCommits(
 
 export async function listRefs(repoPath: string): Promise<RefInfo[]> {
   return invoke<RefInfo[]>("list_refs", { repoPath });
+}
+
+export interface WorktreeInfo {
+  path: string;
+  /** Branch checked out in this worktree; `null` for a detached HEAD. */
+  branch: string | null;
+  head: string;
+  locked: boolean;
+}
+
+export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
+  return invoke<WorktreeInfo[]>("list_worktrees", { repoPath });
 }
 
 export async function getCommitFiles(

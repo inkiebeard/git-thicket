@@ -23,6 +23,16 @@ pub struct RefInfo {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WorktreeInfo {
+    pub path: String,
+    /// Branch checked out in this worktree, e.g. "main"; `None` for a
+    /// detached-HEAD worktree.
+    pub branch: Option<String>,
+    pub head: String,
+    pub locked: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CommitDetail {
     pub hash: String,
     pub author_name: String,
@@ -193,13 +203,17 @@ fn get_commit_stats(
 ) -> Result<HashMap<String, (u32, u32)>, String> {
     let limit_arg = format!("-n{limit}");
     let skip_arg = format!("--skip={skip}");
+    let detached_heads = detached_worktree_heads(repo_path);
     let mut args = vec!["log", "--branches"];
     if include_remotes {
         args.push("--remotes");
     }
+    args.push("--tags");
+    args.push("HEAD");
+    for h in &detached_heads {
+        args.push(h.as_str());
+    }
     args.extend([
-        "--tags",
-        "HEAD",
         "--date-order",
         "--format=%H",
         "--shortstat",
@@ -248,13 +262,17 @@ pub fn list_commits(
     let limit_arg = format!("-n{limit}");
     let skip_arg = format!("--skip={skip}");
     let format_arg = format!("--format={format}");
+    let detached_heads = detached_worktree_heads(&repo_path);
     let mut args = vec!["log", "--branches"];
     if include_remotes {
         args.push("--remotes");
     }
+    args.push("--tags");
+    args.push("HEAD");
+    for h in &detached_heads {
+        args.push(h.as_str());
+    }
     args.extend([
-        "--tags",
-        "HEAD",
         "--date-order",
         format_arg.as_str(),
         "--date=iso-strict",
@@ -385,6 +403,79 @@ pub fn list_refs(repo_path: String) -> Result<Vec<RefInfo>, String> {
     }
 
     Ok(refs)
+}
+
+/// Parses `git worktree list --porcelain` output: blank-line-separated
+/// records of `key[ value]` lines — `worktree <path>` starts each record,
+/// `branch refs/heads/<name>` is absent for a detached HEAD, and
+/// `locked[ <reason>]` only appears when locked.
+fn parse_worktrees(output: &str) -> Vec<WorktreeInfo> {
+    fn flush(
+        worktrees: &mut Vec<WorktreeInfo>,
+        path: &mut Option<String>,
+        head: &mut String,
+        branch: &mut Option<String>,
+        locked: &mut bool,
+    ) {
+        if let Some(p) = path.take() {
+            worktrees.push(WorktreeInfo {
+                path: p,
+                branch: branch.take(),
+                head: std::mem::take(head),
+                locked: std::mem::replace(locked, false),
+            });
+        }
+    }
+
+    let mut worktrees = Vec::new();
+    let mut path: Option<String> = None;
+    let mut head = String::new();
+    let mut branch: Option<String> = None;
+    let mut locked = false;
+
+    for line in output.lines() {
+        if line.is_empty() {
+            flush(&mut worktrees, &mut path, &mut head, &mut branch, &mut locked);
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("worktree ") {
+            path = Some(v.to_string());
+        } else if let Some(v) = line.strip_prefix("HEAD ") {
+            head = v.to_string();
+        } else if let Some(v) = line.strip_prefix("branch ") {
+            branch = Some(v.strip_prefix("refs/heads/").unwrap_or(v).to_string());
+        } else if line == "locked" || line.starts_with("locked ") {
+            locked = true;
+        }
+    }
+    flush(&mut worktrees, &mut path, &mut head, &mut branch, &mut locked);
+
+    worktrees
+}
+
+#[tauri::command(async)]
+pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
+    let output = run_git(&repo_path, &["worktree", "list", "--porcelain"])?;
+    Ok(parse_worktrees(&output))
+}
+
+/// HEAD commit hashes of every worktree that's in detached-HEAD state (no
+/// branch checked out). Their commits aren't reachable from `--branches`,
+/// `--remotes`, or the *main* worktree's `HEAD` the way a normal branch's
+/// commits are, so callers building a `git log` revision list need these
+/// added explicitly or that worktree's history is invisible in the graph.
+/// Best-effort: a failure here (e.g. git too old for `worktree list`) just
+/// means no detached worktrees are surfaced, not that the whole call fails.
+fn detached_worktree_heads(repo_path: &str) -> Vec<String> {
+    run_git(repo_path, &["worktree", "list", "--porcelain"])
+        .map(|output| {
+            parse_worktrees(&output)
+                .into_iter()
+                .filter(|w| w.branch.is_none())
+                .map(|w| w.head)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn status_code_to_name(code: &str) -> &'static str {

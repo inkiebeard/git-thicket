@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RefInfo } from "../api/git";
 import { splitRemoteRef } from "../lib/refNames";
+import { otherWorktreeBranches } from "../lib/worktrees";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
@@ -27,10 +28,17 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const doDeleteTag = useRepoStore((s) => s.doDeleteTag);
   const doDeleteRemoteTag = useRepoStore((s) => s.doDeleteRemoteTag);
 
-  const workingStatus = useActiveTab()?.workingStatus ?? [];
+  const activeTab = useActiveTab();
+  const workingStatus = activeTab?.workingStatus ?? [];
   const hasUncommittedChanges = workingStatus.some(
     (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
   );
+  const worktreeBranches = otherWorktreeBranches(
+    activeTab?.worktrees ?? [],
+    activeTab?.repoPath ?? "",
+  );
+  const worktreePath =
+    target.kind === "branch" ? worktreeBranches.get(target.name) : undefined;
 
   const [promptKind, setPromptKind] = useState<PromptKind | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -62,7 +70,10 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   if (target.kind === "head" || target.kind === "branch") {
     if (target.kind === "branch") {
       items.push({
-        label: `Checkout ${target.name}`,
+        label: worktreePath
+          ? `Checkout ${target.name} (checked out in another worktree)`
+          : `Checkout ${target.name}`,
+        disabled: !!worktreePath,
         onSelect: checkout,
       });
     }
@@ -73,8 +84,9 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
     }
     if (target.kind === "branch") {
       items.push({
-        label: "Delete",
+        label: worktreePath ? "Delete (checked out in another worktree)" : "Delete",
         danger: true,
+        disabled: !!worktreePath,
         onSelect: () => setConfirmDelete(true),
       });
     }

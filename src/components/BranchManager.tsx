@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { splitRemoteRef } from "../lib/refNames";
+import { otherWorktreeBranches } from "../lib/worktrees";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ModalOverlay } from "./ModalOverlay";
@@ -21,6 +22,10 @@ export function BranchManager({ onClose }: BranchManagerProps) {
 
   const refs = activeTab?.refs ?? [];
   const currentBranch = refs.find((r) => r.kind === "head")?.name ?? null;
+  const worktreeBranches = otherWorktreeBranches(
+    activeTab?.worktrees ?? [],
+    activeTab?.repoPath ?? "",
+  );
   const [filter, setFilter] = useState("");
   const query = filter.trim().toLowerCase();
   const matchesFilter = (name: string) => !query || name.toLowerCase().includes(query);
@@ -71,15 +76,28 @@ export function BranchManager({ onClose }: BranchManagerProps) {
         <div className="branch-list">
           {localBranches.map((b) => {
             const isCurrent = b.name === currentBranch;
+            const worktreePath = worktreeBranches.get(b.name);
+            const worktreeTitle = worktreePath
+              ? `Checked out in another worktree: ${worktreePath}`
+              : undefined;
             return (
               <div className="branch-row" key={`local:${b.name}`}>
                 <div className="branch-row-name">
                   {isCurrent && <span className="branch-current-dot" title="Current branch" />}
                   <span>{b.name}</span>
+                  {worktreePath && (
+                    <span className="branch-row-worktree" title={worktreeTitle}>
+                      worktree: {worktreePath}
+                    </span>
+                  )}
                 </div>
                 <span className="branch-row-upstream">{b.upstream ?? "—"}</span>
                 <div className="branch-row-actions">
-                  <button disabled={isCurrent} onClick={() => doCheckoutRef(b.name)}>
+                  <button
+                    disabled={isCurrent || !!worktreePath}
+                    title={worktreeTitle}
+                    onClick={() => doCheckoutRef(b.name)}
+                  >
                     Checkout
                   </button>
                   <button onClick={() => setRenameTarget(b.name)}>Rename…</button>
@@ -96,7 +114,8 @@ export function BranchManager({ onClose }: BranchManagerProps) {
                   </button>
                   <button onClick={() => setUpstreamTarget(b.name)}>Set upstream…</button>
                   <button
-                    disabled={isCurrent}
+                    disabled={isCurrent || !!worktreePath}
+                    title={worktreeTitle}
                     className="branch-row-danger"
                     onClick={() => setDeleteLocalTarget(b.name)}
                   >

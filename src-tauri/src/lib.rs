@@ -21,6 +21,7 @@ pub fn run() {
             git::is_git_repo,
             git::list_commits,
             git::list_refs,
+            git::list_worktrees,
             git::get_commit_files,
             git::get_file_diff,
             git::get_commit_detail,

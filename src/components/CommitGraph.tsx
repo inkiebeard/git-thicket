@@ -5,7 +5,15 @@ import { useColumnOrder } from "../lib/useColumnOrder";
 import { useColumnWidths } from "../lib/useColumnWidths";
 import { usePersistedBoolean } from "../lib/usePersistedBoolean";
 import { useResizableWidths } from "../lib/useResizableWidths";
-import { layoutGraph, maxLane, withGhostCommit, withStashNodes, type GraphNode } from "../lib/graphLayout";
+import { otherWorktreeBranches, worktreeHeadRefs } from "../lib/worktrees";
+import {
+  findPrimaryBranchHash,
+  layoutGraph,
+  maxLane,
+  withGhostCommit,
+  withStashNodes,
+  type GraphNode,
+} from "../lib/graphLayout";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { CommitContextMenu } from "./CommitContextMenu";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -92,16 +100,23 @@ function findLocalTrackingBranch(refs: RefInfo[], remoteRef: RefInfo): RefInfo |
 function RefBadges({
   refs,
   allRefs,
+  worktreeBranches,
   onRefContextMenu,
   onRefDoubleClick,
 }: {
   refs: RefInfo[];
   allRefs: RefInfo[];
+  worktreeBranches: Map<string, string>;
   onRefContextMenu: (e: React.MouseEvent, ref: RefInfo) => void;
   onRefDoubleClick: (ref: RefInfo) => void;
 }) {
   const badges = refs.filter(
-    (r) => r.kind === "branch" || r.kind === "tag" || r.kind === "head" || r.kind === "remote-branch",
+    (r) =>
+      r.kind === "branch" ||
+      r.kind === "tag" ||
+      r.kind === "head" ||
+      r.kind === "remote-branch" ||
+      r.kind === "worktree-head",
   );
   if (badges.length === 0) return null;
 
@@ -112,6 +127,7 @@ function RefBadges({
         // that name only ever means HEAD is detached here (see list_refs
         // in git.rs), not that we're on a branch called "HEAD".
         const isDetachedHead = r.kind === "head" && r.name === "HEAD";
+        const worktreePath = r.kind === "branch" ? worktreeBranches.get(r.name) : undefined;
         return (
           <span
             key={r.name}
@@ -121,23 +137,28 @@ function RefBadges({
                 : (r.kind === "branch" || r.kind === "head") && !r.upstream
                   ? " ref-local-only"
                   : ""
-            }`}
+            }${worktreePath ? " ref-worktree" : ""}`}
             title={
-              isDetachedHead
-                ? "HEAD is detached here — not on any branch. Check out a branch to avoid losing this position when you move HEAD again."
-                : r.kind === "tag"
-                  ? undefined
-                  : r.kind === "remote-branch"
-                    ? findLocalTrackingBranch(allRefs, r)
-                      ? `${r.name} — double-click to fast-forward, rebase, or reset the local branch`
-                      : `${r.name} on the remote — no local branch is on this commit; double-click to check it out`
-                    : r.kind === "branch"
-                      ? `Local branch "${r.name}" — double-click to check out${r.upstream ? `; upstream is ${r.upstream}` : ""}`
-                      : r.upstream
-                        ? `Local branch "${r.name}" — upstream is ${r.upstream}`
-                        : "local only, not published to a remote"
+              r.kind === "worktree-head"
+                ? `Detached worktree "${r.name}" — HEAD is here, not on any branch. This is that worktree's commit history, not a real branch.`
+                : worktreePath
+                  ? `Local branch "${r.name}" — checked out in another worktree at ${worktreePath}`
+                  : isDetachedHead
+                    ? "HEAD is detached here — not on any branch. Check out a branch to avoid losing this position when you move HEAD again."
+                    : r.kind === "tag"
+                      ? undefined
+                      : r.kind === "remote-branch"
+                        ? findLocalTrackingBranch(allRefs, r)
+                          ? `${r.name} — double-click to fast-forward, rebase, or reset the local branch`
+                          : `${r.name} on the remote — no local branch is on this commit; double-click to check it out`
+                        : r.kind === "branch"
+                          ? `Local branch "${r.name}" — double-click to check out${r.upstream ? `; upstream is ${r.upstream}` : ""}`
+                          : r.upstream
+                            ? `Local branch "${r.name}" — upstream is ${r.upstream}`
+                            : "local only, not published to a remote"
             }
             onContextMenu={(e) => {
+              if (r.kind === "worktree-head") return;
               e.preventDefault();
               e.stopPropagation();
               onRefContextMenu(e, r);
@@ -148,7 +169,7 @@ function RefBadges({
               onRefDoubleClick(r);
             }}
           >
-            {r.name}
+            {r.kind === "worktree-head" ? `worktree: ${r.name}` : r.name}
           </span>
         );
       })}
@@ -390,6 +411,10 @@ export function CommitGraph() {
   const commits = activeTab?.commits ?? [];
   const refs = activeTab?.refs ?? [];
   const remotes = activeTab?.remotes ?? [];
+  const worktreeBranches = otherWorktreeBranches(
+    activeTab?.worktrees ?? [],
+    activeTab?.repoPath ?? "",
+  );
   const stashes = activeTab?.stashes ?? [];
   const selectedSha = activeTab?.selectedSha ?? null;
   const loadingCommits = activeTab?.loadingCommits ?? false;
@@ -436,8 +461,16 @@ export function CommitGraph() {
   } = useResizableWidths([REFS_COLUMN_INITIAL_WIDTH], `thicket:commitRefsColWidth:${repoPath}`, 60);
   const refsWidth = refsWidths[0];
 
-  const refMap = useMemo(() => refsByHash(visibleRefs(refs)), [refs]);
+  const detachedWorktreeRefs = useMemo(
+    () => worktreeHeadRefs(activeTab?.worktrees ?? []),
+    [activeTab?.worktrees],
+  );
+  const refMap = useMemo(
+    () => refsByHash(visibleRefs([...refs, ...detachedWorktreeRefs])),
+    [refs, detachedWorktreeRefs],
+  );
   const headHash = useMemo(() => refs.find((r) => r.kind === "head")?.hash ?? null, [refs]);
+  const primaryBranchHash = useMemo(() => findPrimaryBranchHash(refs), [refs]);
   const changedFileCount = useMemo(() => {
     const paths = new Set<string>();
     for (const f of workingStatus) {
@@ -447,12 +480,12 @@ export function CommitGraph() {
   }, [workingStatus]);
 
   const nodes = useMemo(() => {
-    let base = layoutGraph(commits);
+    let base = layoutGraph(commits, primaryBranchHash);
     if (changedFileCount > 0 && headHash) {
       base = withGhostCommit(base, headHash, "Uncommitted changes");
     }
     return withStashNodes(base, stashes);
-  }, [commits, changedFileCount, headHash, stashes]);
+  }, [commits, primaryBranchHash, changedFileCount, headHash, stashes]);
   // Natural width the graph needs to show every lane unclipped — grows
   // unbounded with branch count, so it's also used as the auto-fit target
   // and as the initial value of the (separately capped) column width below.
@@ -508,6 +541,7 @@ export function CommitGraph() {
 
   function handleRefDoubleClick(ref: RefInfo) {
     if (ref.kind === "branch") {
+      if (worktreeBranches.has(ref.name)) return;
       checkoutOrConfirm(ref);
       return;
     }
@@ -744,6 +778,7 @@ export function CommitGraph() {
                     <RefBadges
                       refs={commitRefs}
                       allRefs={refs}
+                      worktreeBranches={worktreeBranches}
                       onRefContextMenu={(e, ref) =>
                         setRefMenu({ x: e.clientX, y: e.clientY, ref })
                       }

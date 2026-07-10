@@ -957,6 +957,26 @@ body {
   font-weight: 600;
 }
 
+/* A local branch currently checked out in a different worktree — checkout
+   and delete are disabled for it here, so the badge itself needs to signal
+   why before the user tries either. */
+.ref-badge.ref-worktree {
+  border: 1px solid var(--lane-2);
+  color: var(--lane-2);
+  background: transparent;
+}
+
+/* Synthetic ref for a detached-HEAD worktree's commit (see worktreeHeadRefs
+   in lib/worktrees.ts) — dotted border marks it as "not a real branch", set
+   apart from both the dashed `.ref-local-only` (a real, unpushed branch) and
+   the solid `.ref-branch` fill. Read-only: no context menu, no checkout. */
+.ref-badge.ref-worktree-head {
+  background: transparent;
+  border: 1px dotted var(--lane-2);
+  color: var(--lane-2);
+  font-style: italic;
+}
+
 .commit-subject {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1764,6 +1784,15 @@ body {
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
+}
+
+.branch-row-worktree {
+  color: var(--text-2);
+  font-size: 11px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .branch-row-upstream {

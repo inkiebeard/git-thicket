@@ -1,4 +1,4 @@
-import type { CommitInfo, StashEntry } from "../api/git";
+import type { CommitInfo, RefInfo, StashEntry } from "../api/git";
 
 export interface GraphNode {
   commit: CommitInfo;
@@ -28,6 +28,28 @@ export interface GraphNode {
 
 export const LANE_COLORS = 12;
 
+/** Preferred names for the repo's main integration branch, checked in order
+ * against local branches first, then `<remote>/<name>` remote-tracking
+ * branches — used to pin that branch's lane to the leftmost column instead
+ * of wherever it happens to fall by commit recency. */
+const PRIMARY_BRANCH_NAMES = ["main", "master"];
+
+export function findPrimaryBranchHash(refs: RefInfo[]): string | null {
+  for (const name of PRIMARY_BRANCH_NAMES) {
+    // A checked-out local branch reports kind "head", not "branch" (see
+    // list_refs in git.rs) — its `name` still holds the branch name, so
+    // both kinds need checking or the primary branch is invisible here
+    // whenever it's the one currently checked out.
+    const local = refs.find((r) => (r.kind === "branch" || r.kind === "head") && r.name === name);
+    if (local) return local.hash;
+  }
+  for (const name of PRIMARY_BRANCH_NAMES) {
+    const remote = refs.find((r) => r.kind === "remote-branch" && r.name.endsWith(`/${name}`));
+    if (remote) return remote.hash;
+  }
+  return null;
+}
+
 /**
  * Assigns each commit to a horizontal lane so branch lines never cross
  * their own history. Commits must arrive in the order `git log` produces
@@ -38,6 +60,15 @@ export const LANE_COLORS = 12;
  * the lane(s) waiting for it (or opens a new lane if none is), then that
  * lane is reassigned to wait for its first parent, and any additional
  * parents (merges) open new lanes.
+ *
+ * `primaryHash`, when given and actually present in `commits`, reserves
+ * lane 0 for that commit's branch: lane 0 is left genuinely empty (not
+ * rendered) until the primary commit — or any edge pointing at it — is
+ * reached, at which point it's redirected there instead of wherever it
+ * would otherwise have landed, and every other lane-allocation skips index
+ * 0 until then. That keeps the primary branch pinned to the leftmost
+ * column for the rest of its history without ever drawing a line above
+ * where it actually starts.
  */
 // A lane freed by a same-row convergence (see below) is marked with this
 // sentinel rather than `null` until the row finishes processing, so it
@@ -45,15 +76,31 @@ export const LANE_COLORS = 12;
 // dot. Distinct from any real 40-char hex commit hash.
 const CLOSING = "__closing__";
 
-export function layoutGraph(commits: CommitInfo[]): GraphNode[] {
+function firstFreeLaneIndex(lanes: (string | null)[], skipZero: boolean): number {
+  for (let i = skipZero ? 1 : 0; i < lanes.length; i++) {
+    if (lanes[i] === null) return i;
+  }
+  return -1;
+}
+
+export function layoutGraph(commits: CommitInfo[], primaryHash?: string | null): GraphNode[] {
+  const shouldReservePrimary =
+    !!primaryHash && commits.some((c) => c.hash === primaryHash);
+
   // lanes[i] = hash this lane is currently waiting for, or null if free
-  const lanes: (string | null)[] = [];
-  const laneColor: number[] = [];
+  const lanes: (string | null)[] = shouldReservePrimary ? [null] : [];
+  const laneColor: number[] = shouldReservePrimary ? [0] : [];
   let nextColor = 0;
+  // Becomes true the moment the primary commit's own row is processed —
+  // after that, lane 0 behaves like any other lane (reservation only
+  // matters for keeping it empty/unclaimed beforehand).
+  let primaryRowSeen = false;
 
   const nodes: GraphNode[] = [];
 
   for (const commit of commits) {
+    const reserving = shouldReservePrimary && !primaryRowSeen;
+
     const activeBefore = lanes.reduce<number[]>((acc, hash, idx) => {
       if (hash !== null) acc.push(idx);
       return acc;
@@ -65,11 +112,22 @@ export function layoutGraph(commits: CommitInfo[]): GraphNode[] {
       return acc;
     }, []);
 
-    const hasIncoming = waitingLanes.length > 0;
+    const isPrimaryTip = reserving && commit.hash === primaryHash;
+    const hasIncoming = isPrimaryTip ? waitingLanes.includes(0) : waitingLanes.length > 0;
     const convergingLanes: { lane: number; color: number }[] = [];
 
     let lane: number;
-    if (waitingLanes.length > 0) {
+    if (isPrimaryTip) {
+      // Force this commit into the reserved lane 0, regardless of which
+      // lane(s) an already-processed child was waiting in — those become
+      // convergence lines into lane 0 instead of a straight continuation.
+      lane = 0;
+      for (const dup of waitingLanes) {
+        if (dup === 0) continue;
+        convergingLanes.push({ lane: dup, color: laneColor[dup] });
+        lanes[dup] = CLOSING;
+      }
+    } else if (waitingLanes.length > 0) {
       lane = waitingLanes[0];
       // Free up any duplicate lanes that were also waiting for this commit
       // (happens when this commit is a fork point with multiple visible
@@ -85,7 +143,7 @@ export function layoutGraph(commits: CommitInfo[]): GraphNode[] {
       }
     } else {
       // No lane expects this commit (e.g. tip of a branch); open a new one.
-      lane = lanes.findIndex((h) => h === null);
+      lane = firstFreeLaneIndex(lanes, reserving);
       if (lane === -1) {
         lane = lanes.length;
         lanes.push(null);
@@ -95,14 +153,26 @@ export function layoutGraph(commits: CommitInfo[]): GraphNode[] {
       }
     }
 
+    if (isPrimaryTip) primaryRowSeen = true;
+
     const parentLanes: { parentHash: string; lane: number; color: number }[] = [];
 
     if (commit.parents.length === 0) {
       lanes[lane] = null;
     } else {
-      // First parent continues in the same lane.
-      lanes[lane] = commit.parents[0];
-      parentLanes.push({ parentHash: commit.parents[0], lane, color: laneColor[lane] });
+      // First parent continues in the same lane — unless it's the reserved
+      // primary commit landing somewhere other than lane 0, in which case
+      // this thread ends here and joins the primary lane via a diagonal.
+      const firstParent = commit.parents[0];
+      if (reserving && lane !== 0 && firstParent === primaryHash) {
+        lanes[lane] = null;
+        lanes[0] = firstParent;
+        laneColor[0] = nextColor++ % LANE_COLORS;
+        parentLanes.push({ parentHash: firstParent, lane: 0, color: laneColor[0] });
+      } else {
+        lanes[lane] = firstParent;
+        parentLanes.push({ parentHash: firstParent, lane, color: laneColor[lane] });
+      }
 
       // Additional parents (merges) each get their own lane.
       for (const parentHash of commit.parents.slice(1)) {
@@ -111,7 +181,12 @@ export function layoutGraph(commits: CommitInfo[]): GraphNode[] {
           parentLanes.push({ parentHash, lane: existing, color: laneColor[existing] });
           continue;
         }
-        let free = lanes.findIndex((h) => h === null);
+        let free: number;
+        if (reserving && parentHash === primaryHash) {
+          free = 0;
+        } else {
+          free = firstFreeLaneIndex(lanes, reserving);
+        }
         if (free === -1) {
           free = lanes.length;
           lanes.push(parentHash);
