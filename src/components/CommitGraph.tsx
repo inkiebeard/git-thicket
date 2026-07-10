@@ -9,6 +9,7 @@ import { layoutGraph, maxLane, withGhostCommit, type GraphNode } from "../lib/gr
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { CommitContextMenu } from "./CommitContextMenu";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { ReconcileBranchDialog } from "./ReconcileBranchDialog";
 import { RefContextMenu } from "./RefContextMenu";
 import { ResizeHandle } from "./ResizeHandle";
@@ -359,8 +360,10 @@ export function CommitGraph() {
   const selectCommit = useRepoStore((s) => s.selectCommit);
   const selectWorkingTree = useRepoStore((s) => s.selectWorkingTree);
   const doCheckoutRef = useRepoStore((s) => s.doCheckoutRef);
+  const doStashPush = useRepoStore((s) => s.doStashPush);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [refMenu, setRefMenu] = useState<RefMenuState | null>(null);
+  const [workingTreeMenu, setWorkingTreeMenu] = useState<{ x: number; y: number } | null>(null);
   const [reconcileTarget, setReconcileTarget] = useState<{
     localBranch: RefInfo;
     remoteRef: RefInfo;
@@ -605,6 +608,10 @@ export function CommitGraph() {
                     className={`commit-row commit-row-ghost${viewingWorkingTree ? " selected" : ""}`}
                     style={rowStyle}
                     onClick={selectWorkingTree}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setWorkingTreeMenu({ x: e.clientX, y: e.clientY });
+                    }}
                   >
                     <div className="commit-refs-cell" style={{ width: refsWidth }} />
                     <div className="commit-graph-cell" style={{ width: graphColWidth }}>
@@ -689,6 +696,24 @@ export function CommitGraph() {
           ref={refMenu.ref}
           remotes={remotes.map((r) => r.name)}
           onClose={() => setRefMenu(null)}
+        />
+      )}
+      {workingTreeMenu && (
+        <ContextMenu
+          x={workingTreeMenu.x}
+          y={workingTreeMenu.y}
+          onClose={() => setWorkingTreeMenu(null)}
+          items={
+            [
+              {
+                label: "Stash all changes",
+                onSelect: () => {
+                  doStashPush();
+                  setWorkingTreeMenu(null);
+                },
+              },
+            ] satisfies ContextMenuEntry[]
+          }
         />
       )}
       {reconcileTarget && (

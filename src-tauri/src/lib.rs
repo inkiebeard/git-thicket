@@ -34,6 +34,8 @@ pub fn run() {
             git::stash_list,
             git::stash_push,
             git::stash_pop,
+            git::stash_drop,
+            git::stash_show,
             git::checkout_ref,
             git::create_branch,
             git::delete_branch,

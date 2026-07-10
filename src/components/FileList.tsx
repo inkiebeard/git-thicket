@@ -3,6 +3,7 @@ import type { FileChange, FileStatus, WorkingFileEntry } from "../api/git";
 import { isConflicted } from "../lib/conflicts";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { ConflictResolutionDialog } from "./ConflictResolutionDialog";
+import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 
 const STATUS_LABEL: Record<string, string> = {
   added: "A",
@@ -57,12 +58,14 @@ function WorkingFileRow({
   isMultiSelected,
   onSelect,
   onToggleStage,
+  onContextMenu,
 }: {
   entry: WorkingFileEntry;
   staged: boolean;
   isMultiSelected: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onToggleStage: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const activeTab = useActiveTab();
   const selectedFilePath = activeTab?.selectedFilePath ?? null;
@@ -78,6 +81,7 @@ function WorkingFileRow({
     <button
       className={`file-row${isSelected ? " selected" : ""}${conflicted ? " file-row-conflict" : ""}`}
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       title={
         conflicted
           ? `${entry.path} has a merge conflict — click to resolve`
@@ -125,9 +129,13 @@ function WorkingFileList() {
   const stageFiles = useRepoStore((s) => s.stageFiles);
   const unstageFiles = useRepoStore((s) => s.unstageFiles);
   const selectWorkingFile = useRepoStore((s) => s.selectWorkingFile);
+  const doStashPush = useRepoStore((s) => s.doStashPush);
 
   const [multi, setMulti] = useState<MultiSelect>(EMPTY_MULTI_SELECT);
   const [conflictPath, setConflictPath] = useState<string | null>(null);
+  const [fileMenu, setFileMenu] = useState<{ x: number; y: number; paths: string[] } | null>(
+    null,
+  );
 
   const staged = workingStatus.filter((f) => f.indexStatus !== "none");
   const unstaged = workingStatus.filter((f) => f.worktreeStatus !== "none");
@@ -184,6 +192,18 @@ function WorkingFileList() {
         else stageFile(path);
       }
       if (inSelection) setMulti(EMPTY_MULTI_SELECT);
+    };
+  }
+
+  // Right-clicking a row that's part of the current unstaged multi-selection
+  // acts on the whole selection; right-clicking any other row acts on just
+  // that file, same convention as handleToggleStage above.
+  function handleUnstagedContextMenu(path: string) {
+    return (e: React.MouseEvent) => {
+      e.preventDefault();
+      const inSelection = multi.staged === false && multi.paths.has(path) && multi.paths.size > 1;
+      const paths = inSelection ? [...multi.paths] : [path];
+      setFileMenu({ x: e.clientX, y: e.clientY, paths });
     };
   }
 
@@ -265,6 +285,7 @@ function WorkingFileList() {
                     : handleSelect(f.path, false, unstagedPaths)
                 }
                 onToggleStage={handleToggleStage(f.path, false)}
+                onContextMenu={handleUnstagedContextMenu(f.path)}
               />
             ))
           )}
@@ -275,6 +296,28 @@ function WorkingFileList() {
           repoPath={repoPath}
           path={conflictPath}
           onClose={() => setConflictPath(null)}
+        />
+      )}
+      {fileMenu && (
+        <ContextMenu
+          x={fileMenu.x}
+          y={fileMenu.y}
+          onClose={() => setFileMenu(null)}
+          items={
+            [
+              {
+                label:
+                  fileMenu.paths.length > 1
+                    ? `Stash selected (${fileMenu.paths.length})`
+                    : `Stash "${fileMenu.paths[0]}"`,
+                onSelect: () => {
+                  doStashPush(undefined, fileMenu.paths);
+                  setMulti(EMPTY_MULTI_SELECT);
+                  setFileMenu(null);
+                },
+              },
+            ] satisfies ContextMenuEntry[]
+          }
         />
       )}
     </div>

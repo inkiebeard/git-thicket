@@ -224,8 +224,13 @@ export async function stashList(repoPath: string): Promise<StashEntry[]> {
 export async function stashPush(
   repoPath: string,
   message?: string,
+  paths?: string[],
 ): Promise<string> {
-  return invoke<string>("stash_push", { repoPath, message: message ?? null });
+  return invoke<string>("stash_push", {
+    repoPath,
+    message: message ?? null,
+    paths: paths && paths.length > 0 ? paths : null,
+  });
 }
 
 export async function stashPop(
@@ -233,6 +238,17 @@ export async function stashPop(
   index?: number,
 ): Promise<string> {
   return invoke<string>("stash_pop", { repoPath, index: index ?? null });
+}
+
+export async function stashDrop(
+  repoPath: string,
+  index?: number,
+): Promise<string> {
+  return invoke<string>("stash_drop", { repoPath, index: index ?? null });
+}
+
+export async function stashShow(repoPath: string, index: number): Promise<string> {
+  return invoke<string>("stash_show", { repoPath, index });
 }
 
 export async function checkoutRef(

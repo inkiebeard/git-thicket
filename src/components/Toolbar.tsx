@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { stashList as fetchStashList, type StashEntry } from "../api/git";
+import { stashList as fetchStashList, stashShow, type StashEntry } from "../api/git";
 import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { BranchManager } from "./BranchManager";
@@ -8,6 +8,7 @@ import { ErrorDetailModal } from "./ErrorDetailModal";
 import { FetchIcon, HamburgerIcon, PullIcon, PushIcon, StashIcon } from "./icons";
 import { RemotesDialog } from "./RemotesDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { StashDiffModal } from "./StashDiffModal";
 
 function PushSplitButton({ hasRemote }: { hasRemote: boolean }) {
   const doPush = useRepoStore((s) => s.doPush);
@@ -94,21 +95,40 @@ function PushSplitButton({ hasRemote }: { hasRemote: boolean }) {
 function StashSplitButton({ hasChanges }: { hasChanges: boolean }) {
   const doStashPush = useRepoStore((s) => s.doStashPush);
   const doStashPop = useRepoStore((s) => s.doStashPop);
+  const doStashDrop = useRepoStore((s) => s.doStashDrop);
   const repoPath = useActiveTab()?.repoPath ?? null;
   const busy = useActiveTab()?.busy ?? false;
   const [open, setOpen] = useState(false);
   const [stashes, setStashes] = useState<StashEntry[]>([]);
+  const [dropTarget, setDropTarget] = useState<StashEntry | null>(null);
+  const [diffTarget, setDiffTarget] = useState<StashEntry | null>(null);
+  const [diffText, setDiffText] = useState("");
   const ref = useClickOutside(() => setOpen(false));
 
-  async function toggleOpen() {
-    if (!open && repoPath) {
-      try {
-        setStashes(await fetchStashList(repoPath));
-      } catch {
-        setStashes([]);
-      }
+  async function refreshStashes() {
+    if (!repoPath) return;
+    try {
+      setStashes(await fetchStashList(repoPath));
+    } catch {
+      setStashes([]);
     }
+  }
+
+  async function toggleOpen() {
+    if (!open) await refreshStashes();
     setOpen((o) => !o);
+  }
+
+  async function showDiff(s: StashEntry) {
+    setOpen(false);
+    setDiffTarget(s);
+    setDiffText("Loading…");
+    if (!repoPath) return;
+    try {
+      setDiffText(await stashShow(repoPath, s.index));
+    } catch (e) {
+      setDiffText(String(e));
+    }
   }
 
   return (
@@ -147,19 +167,57 @@ function StashSplitButton({ hasChanges }: { hasChanges: boolean }) {
             </button>
           )}
           {stashes.map((s) => (
-            <button
-              key={s.index}
-              className="dropdown-item dropdown-item-muted"
-              onClick={() => {
-                setOpen(false);
-                doStashPop(s.index);
-              }}
-              title={s.message}
-            >
-              stash@{"{" + s.index + "}"} {s.message}
-            </button>
+            <div className="dropdown-item-row" key={s.index}>
+              <button
+                className="dropdown-item dropdown-item-muted"
+                onClick={() => {
+                  setOpen(false);
+                  doStashPop(s.index);
+                }}
+                title={`Pop stash@{${s.index}}: ${s.message}`}
+              >
+                stash@{"{" + s.index + "}"} {s.message}
+              </button>
+              <button
+                className="dropdown-item-small"
+                title="Show diff"
+                onClick={() => showDiff(s)}
+              >
+                Diff
+              </button>
+              <button
+                className="dropdown-item-small dropdown-item-small-danger"
+                title="Drop (discard without applying)"
+                onClick={() => {
+                  setOpen(false);
+                  setDropTarget(s);
+                }}
+              >
+                Drop
+              </button>
+            </div>
           ))}
         </div>
+      )}
+      {dropTarget && (
+        <ConfirmDialog
+          title="Drop stash"
+          message={`Permanently discard stash@{${dropTarget.index}}: "${dropTarget.message}"? This cannot be undone.`}
+          confirmLabel="Drop"
+          danger
+          onCancel={() => setDropTarget(null)}
+          onConfirm={() => {
+            doStashDrop(dropTarget.index);
+            setDropTarget(null);
+          }}
+        />
+      )}
+      {diffTarget && (
+        <StashDiffModal
+          title={`stash@{${diffTarget.index}}: ${diffTarget.message}`}
+          diff={diffText}
+          onClose={() => setDiffTarget(null)}
+        />
       )}
     </div>
   );

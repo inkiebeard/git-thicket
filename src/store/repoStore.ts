@@ -48,6 +48,7 @@ import {
   stageAll,
   stagePath,
   stagePaths,
+  stashDrop,
   stashPop,
   stashPush,
   unstageAll,
@@ -150,8 +151,9 @@ interface RepoState {
   doFetch: () => Promise<void>;
   doPull: () => Promise<void>;
   doPush: (forceMode?: PushForceMode, noVerify?: boolean) => Promise<void>;
-  doStashPush: (message?: string) => Promise<void>;
+  doStashPush: (message?: string, paths?: string[]) => Promise<void>;
   doStashPop: (index?: number) => Promise<void>;
+  doStashDrop: (index?: number) => Promise<void>;
   doAddRemote: (name: string, url: string) => Promise<void>;
 
   doCheckoutRef: (refName: string) => Promise<void>;
@@ -614,16 +616,22 @@ export const useRepoStore = create<RepoState>((set, get) => {
       await runAction(activeRepoPath, "Push", () => push(activeRepoPath, forceMode, noVerify));
     },
 
-    doStashPush: async (message?: string) => {
+    doStashPush: async (message?: string, paths?: string[]) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, "Stash", () => stashPush(activeRepoPath, message));
+      await runAction(activeRepoPath, "Stash", () => stashPush(activeRepoPath, message, paths));
     },
 
     doStashPop: async (index?: number) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runAction(activeRepoPath, "Stash pop", () => stashPop(activeRepoPath, index));
+    },
+
+    doStashDrop: async (index?: number) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Stash drop", () => stashDrop(activeRepoPath, index));
     },
 
     doAddRemote: async (name: string, url: string) => {

@@ -603,11 +603,25 @@ pub fn stash_list(repo_path: String) -> Result<Vec<StashEntry>, String> {
 }
 
 #[tauri::command(async)]
-pub fn stash_push(repo_path: String, message: Option<String>) -> Result<String, String> {
-    match &message {
-        Some(m) => run_git(&repo_path, &["stash", "push", "-m", m]),
-        None => run_git(&repo_path, &["stash", "push"]),
+pub fn stash_push(
+    repo_path: String,
+    message: Option<String>,
+    paths: Option<Vec<String>>,
+) -> Result<String, String> {
+    let mut args = vec!["stash", "push"];
+    if let Some(m) = &message {
+        args.push("-m");
+        args.push(m);
     }
+    if let Some(p) = &paths {
+        if !p.is_empty() {
+            args.push("--");
+            for path in p {
+                args.push(path);
+            }
+        }
+    }
+    run_git(&repo_path, &args)
 }
 
 #[tauri::command(async)]
@@ -619,6 +633,23 @@ pub fn stash_pop(repo_path: String, index: Option<u32>) -> Result<String, String
         }
         None => run_git(&repo_path, &["stash", "pop"]),
     }
+}
+
+#[tauri::command(async)]
+pub fn stash_drop(repo_path: String, index: Option<u32>) -> Result<String, String> {
+    match index {
+        Some(i) => {
+            let stash_ref = format!("stash@{{{i}}}");
+            run_git(&repo_path, &["stash", "drop", &stash_ref])
+        }
+        None => run_git(&repo_path, &["stash", "drop"]),
+    }
+}
+
+#[tauri::command(async)]
+pub fn stash_show(repo_path: String, index: u32) -> Result<String, String> {
+    let stash_ref = format!("stash@{{{index}}}");
+    run_git(&repo_path, &["stash", "show", "-p", "--no-color", &stash_ref])
 }
 
 /// Checks out a commit SHA or branch/tag name. For a bare SHA this leaves the
