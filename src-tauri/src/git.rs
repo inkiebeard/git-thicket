@@ -310,7 +310,7 @@ pub fn list_refs(repo_path: String) -> Result<Vec<RefInfo>, String> {
         ],
     )?;
 
-    let refs = output
+    let mut refs: Vec<RefInfo> = output
         .lines()
         .filter_map(|line| {
             let fields: Vec<&str> = line.split(RS).collect();
@@ -336,6 +336,16 @@ pub fn list_refs(repo_path: String) -> Result<Vec<RefInfo>, String> {
                 (refname.to_string(), "other")
             };
 
+            // `refs/remotes/<remote>/HEAD` is a symbolic alias for the
+            // remote's default branch, not a real remote-tracking branch —
+            // checking it out by that literal name always detaches HEAD
+            // instead of landing on a tracked branch, and it's redundant
+            // with whatever badge already represents the actual branch it
+            // points to.
+            if kind == "remote-branch" && name.rsplit('/').next() == Some("HEAD") {
+                return None;
+            }
+
             Some(RefInfo {
                 name,
                 hash,
@@ -344,6 +354,23 @@ pub fn list_refs(repo_path: String) -> Result<Vec<RefInfo>, String> {
             })
         })
         .collect();
+
+    // In detached HEAD, HEAD isn't the symbolic target of any ref under
+    // refs/heads — so `%(HEAD)` above never marks anything `*`, even if a
+    // branch happens to point at the same commit. Without a synthetic
+    // "head" entry here, every HEAD-position feature (the uncommitted-
+    // changes ghost row, the current-position badge, etc.) silently has
+    // nothing to find.
+    if !refs.iter().any(|r| r.kind == "head") {
+        if let Ok(sha) = run_git(&repo_path, &["rev-parse", "HEAD"]) {
+            refs.push(RefInfo {
+                name: "HEAD".to_string(),
+                hash: sha.trim().to_string(),
+                kind: "head".to_string(),
+                upstream: None,
+            });
+        }
+    }
 
     Ok(refs)
 }

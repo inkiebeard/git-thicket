@@ -368,6 +368,13 @@ body {
   gap: 6px;
 }
 
+.toolbar-branch-detached {
+  color: var(--danger);
+  border: 1px dashed var(--danger);
+  background: transparent;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
 .toolbar-ahead-behind {
   display: flex;
   gap: 4px;
@@ -906,6 +913,17 @@ body {
 .ref-badge.ref-head.ref-local-only {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* HEAD pointing at a commit with no branch checked out — deliberately
+   distinct from the solid `.ref-head` fill used for a normal checked-out
+   branch, since this state is easy to end up in by accident (e.g. checking
+   out a remote ref or a bare commit) and easy to miss otherwise. */
+.ref-badge.ref-detached {
+  background: transparent;
+  border: 1px dashed var(--danger);
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .commit-subject {

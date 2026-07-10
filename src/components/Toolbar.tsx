@@ -264,7 +264,13 @@ export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
   const dismissToast = useRepoStore((s) => s.dismissToast);
   const [errorModalOpen, setErrorModalOpen] = useState(false);
 
-  const upstream = refs.find((r) => r.kind === "head")?.upstream ?? null;
+  const headRef = refs.find((r) => r.kind === "head");
+  const upstream = headRef?.upstream ?? null;
+  // `branch` is git's own `HEAD` literal when detached (see current_branch
+  // in git.rs) — swap in the short sha so it reads as a position, not a
+  // (nonexistent) branch name.
+  const isDetachedHead = branch === "HEAD" && headRef?.name === "HEAD";
+  const branchLabel = isDetachedHead ? `detached @ ${headRef.hash.slice(0, 7)}` : branch;
   const diverged = aheadBehind && (aheadBehind.ahead > 0 || aheadBehind.behind > 0);
   const hasRemote = remotes.length > 0;
   const hasChanges = workingStatus.some(
@@ -287,8 +293,11 @@ export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
           </span>
         )}
         {branch && (
-          <span className="toolbar-branch">
-            {branch}
+          <span
+            className={`toolbar-branch${isDetachedHead ? " toolbar-branch-detached" : ""}`}
+            title={isDetachedHead ? "HEAD is detached — not on any branch" : undefined}
+          >
+            {branchLabel}
             {diverged && (
               <span
                 className="toolbar-ahead-behind"

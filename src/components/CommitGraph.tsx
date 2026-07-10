@@ -105,39 +105,51 @@ function RefBadges({
 
   return (
     <span className="commit-refs">
-      {badges.map((r) => (
-        <span
-          key={r.name}
-          className={`ref-badge ref-${r.kind}${
-            (r.kind === "branch" || r.kind === "head") && !r.upstream ? " ref-local-only" : ""
-          }`}
-          title={
-            r.kind === "tag"
-              ? undefined
-              : r.kind === "remote-branch"
-                ? findLocalTrackingBranch(allRefs, r)
-                  ? `${r.name} — double-click to fast-forward, rebase, or reset the local branch`
-                  : `${r.name} on the remote — no local branch is on this commit; double-click to check it out`
-                : r.kind === "branch"
-                  ? `Local branch "${r.name}" — double-click to check out${r.upstream ? `; upstream is ${r.upstream}` : ""}`
-                  : r.upstream
-                    ? `Local branch "${r.name}" — upstream is ${r.upstream}`
-                    : "local only, not published to a remote"
-          }
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRefContextMenu(e, r);
-          }}
-          onDoubleClick={(e) => {
-            if (r.kind !== "branch" && r.kind !== "remote-branch") return;
-            e.stopPropagation();
-            onRefDoubleClick(r);
-          }}
-        >
-          {r.name}
-        </span>
-      ))}
+      {badges.map((r) => {
+        // Git won't let a real branch be named "HEAD" — a synthetic ref by
+        // that name only ever means HEAD is detached here (see list_refs
+        // in git.rs), not that we're on a branch called "HEAD".
+        const isDetachedHead = r.kind === "head" && r.name === "HEAD";
+        return (
+          <span
+            key={r.name}
+            className={`ref-badge ref-${r.kind}${
+              isDetachedHead
+                ? " ref-detached"
+                : (r.kind === "branch" || r.kind === "head") && !r.upstream
+                  ? " ref-local-only"
+                  : ""
+            }`}
+            title={
+              isDetachedHead
+                ? "HEAD is detached here — not on any branch. Check out a branch to avoid losing this position when you move HEAD again."
+                : r.kind === "tag"
+                  ? undefined
+                  : r.kind === "remote-branch"
+                    ? findLocalTrackingBranch(allRefs, r)
+                      ? `${r.name} — double-click to fast-forward, rebase, or reset the local branch`
+                      : `${r.name} on the remote — no local branch is on this commit; double-click to check it out`
+                    : r.kind === "branch"
+                      ? `Local branch "${r.name}" — double-click to check out${r.upstream ? `; upstream is ${r.upstream}` : ""}`
+                      : r.upstream
+                        ? `Local branch "${r.name}" — upstream is ${r.upstream}`
+                        : "local only, not published to a remote"
+            }
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onRefContextMenu(e, r);
+            }}
+            onDoubleClick={(e) => {
+              if (r.kind !== "branch" && r.kind !== "remote-branch") return;
+              e.stopPropagation();
+              onRefDoubleClick(r);
+            }}
+          >
+            {r.name}
+          </span>
+        );
+      })}
     </span>
   );
 }
