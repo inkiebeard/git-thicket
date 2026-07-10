@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { stashShow, type StashEntry } from "../api/git";
+import { isMacOS } from "../lib/platform";
 import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { BranchManager } from "./BranchManager";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorDetailModal } from "./ErrorDetailModal";
 import { FetchIcon, HamburgerIcon, PullIcon, PushIcon, StashIcon } from "./icons";
+import { PermissionsModal } from "./PermissionsModal";
 import { RemotesDialog } from "./RemotesDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { StashDiffModal } from "./StashDiffModal";
@@ -218,6 +220,7 @@ function AdvancedMenuButton({ terminalOpen, onToggleTerminal }: ToolbarProps) {
   const [remotesOpen, setRemotesOpen] = useState(false);
   const [branchManagerOpen, setBranchManagerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
   const ref = useClickOutside(() => setOpen(false));
 
   return (
@@ -271,6 +274,17 @@ function AdvancedMenuButton({ terminalOpen, onToggleTerminal }: ToolbarProps) {
             {showRemoteBranches ? "✓ Remote branches" : "Remote branches"}
           </button>
           <div className="dropdown-separator" />
+          {isMacOS() && (
+            <button
+              className="dropdown-item"
+              onClick={() => {
+                setOpen(false);
+                setPermissionsOpen(true);
+              }}
+            >
+              Grant folder access…
+            </button>
+          )}
           <button
             className="dropdown-item"
             onClick={() => {
@@ -285,6 +299,7 @@ function AdvancedMenuButton({ terminalOpen, onToggleTerminal }: ToolbarProps) {
       {remotesOpen && <RemotesDialog onClose={() => setRemotesOpen(false)} />}
       {branchManagerOpen && <BranchManager onClose={() => setBranchManagerOpen(false)} />}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {permissionsOpen && <PermissionsModal onClose={() => setPermissionsOpen(false)} />}
     </div>
   );
 }

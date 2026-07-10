@@ -3,13 +3,17 @@ import { CommitDetail } from "./components/CommitDetail";
 import { CommitGraph } from "./components/CommitGraph";
 import { DiffViewer } from "./components/DiffViewer";
 import { FileList } from "./components/FileList";
+import { PermissionsModal } from "./components/PermissionsModal";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { Tabs } from "./components/Tabs";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { Toolbar } from "./components/Toolbar";
+import { isMacOS } from "./lib/platform";
 import { useResizableWidths } from "./lib/useResizableWidths";
 import { useActiveTab, useRepoStore } from "./store/repoStore";
 import "./App.css";
+
+const PERMISSIONS_MODAL_SEEN_KEY = "thicket:permissionsModalSeen";
 
 function App() {
   const activeTab = useActiveTab();
@@ -23,11 +27,20 @@ function App() {
   );
   const hasSelection = !!activeTab?.selectedSha || !!activeTab?.viewingWorkingTree;
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [permissionsModalOpen, setPermissionsModalOpen] = useState(false);
 
   useEffect(() => {
     restoreSession();
+    if (isMacOS() && localStorage.getItem(PERMISSIONS_MODAL_SEEN_KEY) !== "true") {
+      setPermissionsModalOpen(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function dismissPermissionsModal() {
+    localStorage.setItem(PERMISSIONS_MODAL_SEEN_KEY, "true");
+    setPermissionsModalOpen(false);
+  }
 
   return (
     <div className="app">
@@ -82,6 +95,7 @@ function App() {
           />
         </>
       )}
+      {permissionsModalOpen && <PermissionsModal onClose={dismissPermissionsModal} />}
     </div>
   );
 }
