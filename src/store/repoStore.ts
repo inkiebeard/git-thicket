@@ -149,7 +149,7 @@ interface RepoState {
 
   doFetch: () => Promise<void>;
   doPull: () => Promise<void>;
-  doPush: (forceMode?: PushForceMode) => Promise<void>;
+  doPush: (forceMode?: PushForceMode, noVerify?: boolean) => Promise<void>;
   doStashPush: (message?: string) => Promise<void>;
   doStashPop: (index?: number) => Promise<void>;
   doAddRemote: (name: string, url: string) => Promise<void>;
@@ -608,10 +608,10 @@ export const useRepoStore = create<RepoState>((set, get) => {
       await runAction(activeRepoPath, "Pull", () => pull(activeRepoPath));
     },
 
-    doPush: async (forceMode: PushForceMode = null) => {
+    doPush: async (forceMode: PushForceMode = null, noVerify = false) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, "Push", () => push(activeRepoPath, forceMode));
+      await runAction(activeRepoPath, "Push", () => push(activeRepoPath, forceMode, noVerify));
     },
 
     doStashPush: async (message?: string) => {

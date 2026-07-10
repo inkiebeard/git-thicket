@@ -507,14 +507,22 @@ pub fn pull(repo_path: String) -> Result<String, String> {
 }
 
 /// `force_mode`: None for a plain push, `Some("force")` or `Some("force-with-lease")`
-/// for the corresponding destructive push variant.
+/// for the corresponding destructive push variant. `no_verify` skips local
+/// pre-push hooks, independent of `force_mode`.
 #[tauri::command(async)]
-pub fn push(repo_path: String, force_mode: Option<String>) -> Result<String, String> {
+pub fn push(
+    repo_path: String,
+    force_mode: Option<String>,
+    no_verify: Option<bool>,
+) -> Result<String, String> {
     let mut args = vec!["push"];
     match force_mode.as_deref() {
         Some("force") => args.push("--force"),
         Some("force-with-lease") => args.push("--force-with-lease"),
         _ => {}
+    }
+    if no_verify.unwrap_or(false) {
+        args.push("--no-verify");
     }
 
     // A branch that's never been pushed (or a remote that was just added)

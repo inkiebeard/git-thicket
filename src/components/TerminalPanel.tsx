@@ -52,6 +52,7 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
   const [customLocalRef, setCustomLocalRef] = useState("HEAD");
   const [customRemoteRef, setCustomRemoteRef] = useState("");
   const [force, setForce] = useState<PushForce>("none");
+  const [noVerify, setNoVerify] = useState(false);
 
   // fetch
   const [fetchAll, setFetchAll] = useState(false);
@@ -91,6 +92,7 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
       case "push": {
         const flag = FORCE_FLAG[force];
         const flags = flag ? [flag] : [];
+        if (noVerify) flags.push("--no-verify");
         if (targetMode === "same-name") return ["push", ...flags, dest, "HEAD"];
         if (targetMode === "upstream" && upstream) {
           return ["push", ...flags, dest, `HEAD:${upstreamBranchName(upstream)}`];
@@ -148,6 +150,7 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
     customLocalRef,
     customRemoteRef,
     force,
+    noVerify,
     fetchAll,
     fetchPrune,
     pullRebase,
@@ -271,6 +274,14 @@ export function TerminalPanel({ height, onClose }: TerminalPanelProps) {
                 <option value="force-with-lease">--force-with-lease</option>
                 <option value="force">--force</option>
               </select>
+              <label className="terminal-checkbox">
+                <input
+                  type="checkbox"
+                  checked={noVerify}
+                  onChange={(e) => setNoVerify(e.target.checked)}
+                />
+                --no-verify
+              </label>
             </>
           )}
 

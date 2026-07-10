@@ -41,6 +41,16 @@ function PushSplitButton({ hasRemote }: { hasRemote: boolean }) {
       {open && (
         <div className="dropdown-menu">
           <button
+            className="dropdown-item"
+            title="Push without running local pre-push hooks"
+            onClick={() => {
+              setOpen(false);
+              doPush(null, true);
+            }}
+          >
+            Push --no-verify
+          </button>
+          <button
             className="dropdown-item dropdown-item-danger"
             onClick={() => {
               setOpen(false);

@@ -212,8 +212,9 @@ export async function pull(repoPath: string): Promise<string> {
 export async function push(
   repoPath: string,
   forceMode: PushForceMode = null,
+  noVerify = false,
 ): Promise<string> {
-  return invoke<string>("push", { repoPath, forceMode });
+  return invoke<string>("push", { repoPath, forceMode, noVerify });
 }
 
 export async function stashList(repoPath: string): Promise<StashEntry[]> {
