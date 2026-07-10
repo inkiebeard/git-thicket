@@ -8,6 +8,7 @@ import { useResizableWidths } from "../lib/useResizableWidths";
 import { layoutGraph, maxLane, withGhostCommit, type GraphNode } from "../lib/graphLayout";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { CommitContextMenu } from "./CommitContextMenu";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ReconcileBranchDialog } from "./ReconcileBranchDialog";
 import { RefContextMenu } from "./RefContextMenu";
 import { ResizeHandle } from "./ResizeHandle";
@@ -352,6 +353,7 @@ export function CommitGraph() {
     localBranch: RefInfo;
     remoteRef: RefInfo;
   } | null>(null);
+  const [checkoutConfirmTarget, setCheckoutConfirmTarget] = useState<RefInfo | null>(null);
   const [dragKey, setDragKey] = useState<ColumnKey | null>(null);
   const [showChanges, setShowChanges] = usePersistedBoolean(true, "thicket:showChangeCounts");
 
@@ -418,9 +420,22 @@ export function CommitGraph() {
     overscan: 20,
   });
 
+  function checkoutOrConfirm(ref: RefInfo) {
+    // `git checkout` only refuses when a changed file's *content* would
+    // actually be overwritten — it happily carries forward unrelated
+    // uncommitted edits without a word. That's surprising when you didn't
+    // mean to switch branches, so ask first any time there's working-tree
+    // state that could be affected, rather than switching silently.
+    if (changedFileCount > 0) {
+      setCheckoutConfirmTarget(ref);
+    } else {
+      doCheckoutRef(ref.name);
+    }
+  }
+
   function handleRefDoubleClick(ref: RefInfo) {
     if (ref.kind === "branch") {
-      doCheckoutRef(ref.name);
+      checkoutOrConfirm(ref);
       return;
     }
     if (ref.kind === "remote-branch") {
@@ -428,7 +443,7 @@ export function CommitGraph() {
       if (localBranch) {
         setReconcileTarget({ localBranch, remoteRef: ref });
       } else {
-        doCheckoutRef(ref.name);
+        checkoutOrConfirm(ref);
       }
     }
   }
@@ -669,6 +684,18 @@ export function CommitGraph() {
           localBranch={reconcileTarget.localBranch}
           remoteRef={reconcileTarget.remoteRef}
           onClose={() => setReconcileTarget(null)}
+        />
+      )}
+      {checkoutConfirmTarget && (
+        <ConfirmDialog
+          title={`Checkout "${checkoutConfirmTarget.name}"`}
+          message={`You have uncommitted changes. Switching to "${checkoutConfirmTarget.name}" will fail if it conflicts with them, but if it doesn't, git carries them onto the new branch untouched — they won't be reverted or lost. Continue?`}
+          confirmLabel="Checkout"
+          onCancel={() => setCheckoutConfirmTarget(null)}
+          onConfirm={() => {
+            doCheckoutRef(checkoutConfirmTarget.name);
+            setCheckoutConfirmTarget(null);
+          }}
         />
       )}
     </div>

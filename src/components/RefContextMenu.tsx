@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { RefInfo } from "../api/git";
 import { splitRemoteRef } from "../lib/refNames";
-import { useRepoStore } from "../store/repoStore";
+import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { PromptDialog } from "./PromptDialog";
@@ -27,12 +27,31 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const doDeleteTag = useRepoStore((s) => s.doDeleteTag);
   const doDeleteRemoteTag = useRepoStore((s) => s.doDeleteRemoteTag);
 
+  const workingStatus = useActiveTab()?.workingStatus ?? [];
+  const hasUncommittedChanges = workingStatus.some(
+    (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
+  );
+
   const [promptKind, setPromptKind] = useState<PromptKind | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteRemote, setConfirmDeleteRemote] = useState(false);
+  const [confirmCheckout, setConfirmCheckout] = useState(false);
 
-  const dialogOpen = promptKind !== null || confirmDelete || confirmDeleteRemote;
+  const dialogOpen =
+    promptKind !== null || confirmDelete || confirmDeleteRemote || confirmCheckout;
   const firstRemote = remotes[0] ?? null;
+
+  // `git checkout` only refuses when a changed file's content would actually
+  // be overwritten — it carries forward unrelated uncommitted edits without
+  // a word, so ask first any time there's working-tree state to protect.
+  function checkout() {
+    if (hasUncommittedChanges) {
+      setConfirmCheckout(true);
+    } else {
+      doCheckoutRef(target.name);
+      onClose();
+    }
+  }
 
   async function copy(text: string) {
     await navigator.clipboard.writeText(text);
@@ -44,7 +63,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
     if (target.kind === "branch") {
       items.push({
         label: `Checkout ${target.name}`,
-        onSelect: () => { doCheckoutRef(target.name); onClose(); },
+        onSelect: checkout,
       });
     }
     items.push({ label: "Rename…", onSelect: () => setPromptKind("rename") });
@@ -62,7 +81,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   } else if (target.kind === "remote-branch") {
     items.push({
       label: "Checkout (create local branch)",
-      onSelect: () => { doCheckoutRef(target.name); onClose(); },
+      onSelect: checkout,
     });
     items.push({
       label: "Delete on remote",
@@ -118,6 +137,18 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
           onCancel={onClose}
           onConfirm={(upstream) => {
             doSetUpstream(target.name, upstream);
+            onClose();
+          }}
+        />
+      )}
+      {confirmCheckout && (
+        <ConfirmDialog
+          title={`Checkout "${target.name}"`}
+          message={`You have uncommitted changes. Switching to "${target.name}" will fail if it conflicts with them, but if it doesn't, git carries them onto the new branch untouched — they won't be reverted or lost. Continue?`}
+          confirmLabel="Checkout"
+          onCancel={onClose}
+          onConfirm={() => {
+            doCheckoutRef(target.name);
             onClose();
           }}
         />
