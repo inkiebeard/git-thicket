@@ -307,7 +307,9 @@ pub fn list_refs(repo_path: String) -> Result<Vec<RefInfo>, String> {
         &repo_path,
         &[
             "for-each-ref",
-            &format!("--format=%(refname){RS}%(objectname){RS}%(HEAD){RS}%(upstream:short)"),
+            &format!(
+                "--format=%(refname){RS}%(objectname){RS}%(HEAD){RS}%(upstream:short){RS}%(*objectname)"
+            ),
             "refs/heads",
             "refs/remotes",
             "refs/tags",
@@ -322,7 +324,13 @@ pub fn list_refs(repo_path: String) -> Result<Vec<RefInfo>, String> {
                 return None;
             }
             let refname = fields[0];
-            let hash = fields[1].to_string();
+            // An annotated tag's `%(objectname)` is the tag *object's* own
+            // hash, not the commit it points to — `%(*objectname)` is the
+            // dereferenced target, populated only for annotated tags, so
+            // prefer it when present. Lightweight tags/branches have no
+            // dereferenced value and just use `%(objectname)` directly.
+            let deref = fields.get(4).copied().unwrap_or("");
+            let hash = if deref.is_empty() { fields[1].to_string() } else { deref.to_string() };
             let is_head = fields[2] == "*";
             let upstream = if fields[3].is_empty() {
                 None
