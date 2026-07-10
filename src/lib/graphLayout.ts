@@ -230,6 +230,13 @@ export function withStashNodes(nodes: GraphNode[], stashes: StashEntry[]): Graph
       color: (nextLane - 1) % LANE_COLORS,
     }));
 
+    // The base commit's own lane doesn't stop existing just because rows
+    // got inserted above it — whatever was continuing that lane down from
+    // further up the graph still needs somewhere to pass through before it
+    // reaches the base's dot. Only relevant if something actually was
+    // arriving there (a real child commit above it in this same lane).
+    const baseLaneThrough = node.hasIncoming ? [{ lane: node.lane, color: node.color }] : [];
+
     stashLanes.forEach(({ stash, lane, color }, j) => {
       // Lanes for stashes on the same base that sit below this one in the
       // list still need to pass through this row on their way down to it.
@@ -248,7 +255,7 @@ export function withStashNodes(nodes: GraphNode[], stashes: StashEntry[]): Graph
         lane,
         color,
         parentLanes: [{ parentHash: node.commit.hash, lane, color, dashed: true }],
-        passThroughLanes: [...node.passThroughLanes, ...laterLanes],
+        passThroughLanes: [...node.passThroughLanes, ...baseLaneThrough, ...laterLanes],
         hasIncoming: false,
         convergingLanes: [],
         isStash: true,
