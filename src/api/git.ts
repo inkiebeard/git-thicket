@@ -165,6 +165,13 @@ export type PushForceMode = "force" | "force-with-lease" | null;
 export interface StashEntry {
   index: number;
   message: string;
+  baseHash: string;
+}
+
+interface RawStashEntry {
+  index: number;
+  message: string;
+  base_hash: string;
 }
 
 export async function currentBranch(repoPath: string): Promise<string> {
@@ -218,7 +225,8 @@ export async function push(
 }
 
 export async function stashList(repoPath: string): Promise<StashEntry[]> {
-  return invoke<StashEntry[]>("stash_list", { repoPath });
+  const raw = await invoke<RawStashEntry[]>("stash_list", { repoPath });
+  return raw.map((s) => ({ index: s.index, message: s.message, baseHash: s.base_hash }));
 }
 
 export async function stashPush(

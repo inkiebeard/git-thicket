@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
-import type { CommitInfo, RefInfo } from "../api/git";
+import { stashShow, type CommitInfo, type RefInfo, type StashEntry } from "../api/git";
 import { useColumnOrder } from "../lib/useColumnOrder";
 import { useColumnWidths } from "../lib/useColumnWidths";
 import { usePersistedBoolean } from "../lib/usePersistedBoolean";
@@ -13,6 +13,7 @@ import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { ReconcileBranchDialog } from "./ReconcileBranchDialog";
 import { RefContextMenu } from "./RefContextMenu";
 import { ResizeHandle } from "./ResizeHandle";
+import { StashDiffModal } from "./StashDiffModal";
 
 const ROW_HEIGHT = 28;
 const LANE_WIDTH = 16;
@@ -151,6 +152,41 @@ function RefBadges({
           </span>
         );
       })}
+    </span>
+  );
+}
+
+function StashBadges({
+  stashes,
+  onStashClick,
+  onStashContextMenu,
+}: {
+  stashes: StashEntry[];
+  onStashClick: (stash: StashEntry) => void;
+  onStashContextMenu: (e: React.MouseEvent, stash: StashEntry) => void;
+}) {
+  if (stashes.length === 0) return null;
+
+  return (
+    <span className="commit-refs">
+      {stashes.map((s) => (
+        <span
+          key={s.index}
+          className="ref-badge ref-stash"
+          title={`stash@{${s.index}}: ${s.message} — click to show diff, right-click for more`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onStashClick(s);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onStashContextMenu(e, s);
+          }}
+        >
+          stash@{"{" + s.index + "}"}
+        </span>
+      ))}
     </span>
   );
 }
@@ -353,6 +389,7 @@ export function CommitGraph() {
   const commits = activeTab?.commits ?? [];
   const refs = activeTab?.refs ?? [];
   const remotes = activeTab?.remotes ?? [];
+  const stashes = activeTab?.stashes ?? [];
   const selectedSha = activeTab?.selectedSha ?? null;
   const loadingCommits = activeTab?.loadingCommits ?? false;
   const workingStatus = activeTab?.workingStatus ?? [];
@@ -361,9 +398,17 @@ export function CommitGraph() {
   const selectWorkingTree = useRepoStore((s) => s.selectWorkingTree);
   const doCheckoutRef = useRepoStore((s) => s.doCheckoutRef);
   const doStashPush = useRepoStore((s) => s.doStashPush);
+  const doStashPop = useRepoStore((s) => s.doStashPop);
+  const doStashDrop = useRepoStore((s) => s.doStashDrop);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [refMenu, setRefMenu] = useState<RefMenuState | null>(null);
   const [workingTreeMenu, setWorkingTreeMenu] = useState<{ x: number; y: number } | null>(null);
+  const [stashMenu, setStashMenu] = useState<{ x: number; y: number; stash: StashEntry } | null>(
+    null,
+  );
+  const [stashDiffTarget, setStashDiffTarget] = useState<StashEntry | null>(null);
+  const [stashDiffText, setStashDiffText] = useState("");
+  const [stashDropTarget, setStashDropTarget] = useState<StashEntry | null>(null);
   const [reconcileTarget, setReconcileTarget] = useState<{
     localBranch: RefInfo;
     remoteRef: RefInfo;
@@ -391,6 +436,16 @@ export function CommitGraph() {
   const refsWidth = refsWidths[0];
 
   const refMap = useMemo(() => refsByHash(visibleRefs(refs)), [refs]);
+  const stashesByHash = useMemo(() => {
+    const map = new Map<string, StashEntry[]>();
+    for (const s of stashes) {
+      if (!s.baseHash) continue;
+      const list = map.get(s.baseHash) ?? [];
+      list.push(s);
+      map.set(s.baseHash, list);
+    }
+    return map;
+  }, [stashes]);
   const headHash = useMemo(() => refs.find((r) => r.kind === "head")?.hash ?? null, [refs]);
   const changedFileCount = useMemo(() => {
     const paths = new Set<string>();
@@ -434,6 +489,18 @@ export function CommitGraph() {
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
   });
+
+  async function showStashDiff(s: StashEntry) {
+    setStashMenu(null);
+    setStashDiffTarget(s);
+    setStashDiffText("Loading…");
+    if (!repoPath) return;
+    try {
+      setStashDiffText(await stashShow(repoPath, s.index));
+    } catch (e) {
+      setStashDiffText(String(e));
+    }
+  }
 
   function checkoutOrConfirm(ref: RefInfo) {
     // `git checkout` only refuses when a changed file's *content* would
@@ -633,6 +700,7 @@ export function CommitGraph() {
               }
 
               const commitRefs = refMap.get(node.commit.hash) ?? [];
+              const commitStashes = stashesByHash.get(node.commit.hash) ?? [];
               const isSelected = node.commit.hash === selectedSha;
               return (
                 <div
@@ -658,6 +726,13 @@ export function CommitGraph() {
                         setRefMenu({ x: e.clientX, y: e.clientY, ref })
                       }
                       onRefDoubleClick={handleRefDoubleClick}
+                    />
+                    <StashBadges
+                      stashes={commitStashes}
+                      onStashClick={showStashDiff}
+                      onStashContextMenu={(e, stash) =>
+                        setStashMenu({ x: e.clientX, y: e.clientY, stash })
+                      }
                     />
                   </div>
                   <div className="commit-graph-cell" style={{ width: graphColWidth }}>
@@ -714,6 +789,56 @@ export function CommitGraph() {
               },
             ] satisfies ContextMenuEntry[]
           }
+        />
+      )}
+      {stashMenu && (
+        <ContextMenu
+          x={stashMenu.x}
+          y={stashMenu.y}
+          onClose={() => setStashMenu(null)}
+          items={
+            [
+              {
+                label: "Show diff",
+                onSelect: () => showStashDiff(stashMenu.stash),
+              },
+              {
+                label: "Pop",
+                onSelect: () => {
+                  doStashPop(stashMenu.stash.index);
+                  setStashMenu(null);
+                },
+              },
+              {
+                label: "Drop",
+                danger: true,
+                onSelect: () => {
+                  setStashDropTarget(stashMenu.stash);
+                  setStashMenu(null);
+                },
+              },
+            ] satisfies ContextMenuEntry[]
+          }
+        />
+      )}
+      {stashDropTarget && (
+        <ConfirmDialog
+          title="Drop stash"
+          message={`Permanently discard stash@{${stashDropTarget.index}}: "${stashDropTarget.message}"? This cannot be undone.`}
+          confirmLabel="Drop"
+          danger
+          onCancel={() => setStashDropTarget(null)}
+          onConfirm={() => {
+            doStashDrop(stashDropTarget.index);
+            setStashDropTarget(null);
+          }}
+        />
+      )}
+      {stashDiffTarget && (
+        <StashDiffModal
+          title={`stash@{${stashDiffTarget.index}}: ${stashDiffTarget.message}`}
+          diff={stashDiffText}
+          onClose={() => setStashDiffTarget(null)}
         />
       )}
       {reconcileTarget && (

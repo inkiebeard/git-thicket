@@ -957,6 +957,16 @@ body {
   font-weight: 600;
 }
 
+/* Stashes based on this commit — not a real ref, so kept visually distinct
+   (dashed, off-palette) from branch/tag/head badges; click to preview its
+   diff, right-click for pop/drop. */
+.ref-badge.ref-stash {
+  background: transparent;
+  border: 1px dashed var(--lane-4);
+  color: var(--lane-4);
+  cursor: pointer;
+}
+
 .commit-subject {
   overflow: hidden;
   text-overflow: ellipsis;

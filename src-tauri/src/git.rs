@@ -48,6 +48,10 @@ pub struct FileChange {
 pub struct StashEntry {
     pub index: u32,
     pub message: String,
+    /// The commit HEAD was on when this stash was created — `stash@{n}` is
+    /// itself a commit whose first parent is that base (`^2` holds the
+    /// staged changes, `^3` untracked files if `-u`/`-a` was used).
+    pub base_hash: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -587,17 +591,18 @@ pub fn push(
 pub fn stash_list(repo_path: String) -> Result<Vec<StashEntry>, String> {
     let output = run_git(&repo_path, &["stash", "list"])?;
 
-    let entries = output
-        .lines()
-        .filter_map(|line| {
-            // format: "stash@{0}: WIP on main: abc123 message"
-            let open = line.find('{')?;
-            let close = line.find('}')?;
-            let index: u32 = line[open + 1..close].parse().ok()?;
-            let message = line.splitn(2, ": ").nth(1).unwrap_or("").to_string();
-            Some(StashEntry { index, message })
-        })
-        .collect();
+    let mut entries = Vec::new();
+    for line in output.lines() {
+        // format: "stash@{0}: WIP on main: abc123 message"
+        let Some(open) = line.find('{') else { continue };
+        let Some(close) = line.find('}') else { continue };
+        let Ok(index) = line[open + 1..close].parse::<u32>() else { continue };
+        let message = line.splitn(2, ": ").nth(1).unwrap_or("").to_string();
+        let base_hash = run_git(&repo_path, &["rev-parse", &format!("stash@{{{index}}}^1")])
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        entries.push(StashEntry { index, message, base_hash });
+    }
 
     Ok(entries)
 }

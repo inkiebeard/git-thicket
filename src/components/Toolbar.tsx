@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { stashList as fetchStashList, stashShow, type StashEntry } from "../api/git";
+import { stashShow, type StashEntry } from "../api/git";
 import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { BranchManager } from "./BranchManager";
@@ -96,28 +96,15 @@ function StashSplitButton({ hasChanges }: { hasChanges: boolean }) {
   const doStashPush = useRepoStore((s) => s.doStashPush);
   const doStashPop = useRepoStore((s) => s.doStashPop);
   const doStashDrop = useRepoStore((s) => s.doStashDrop);
-  const repoPath = useActiveTab()?.repoPath ?? null;
-  const busy = useActiveTab()?.busy ?? false;
+  const activeTab = useActiveTab();
+  const repoPath = activeTab?.repoPath ?? null;
+  const busy = activeTab?.busy ?? false;
+  const stashes = activeTab?.stashes ?? [];
   const [open, setOpen] = useState(false);
-  const [stashes, setStashes] = useState<StashEntry[]>([]);
   const [dropTarget, setDropTarget] = useState<StashEntry | null>(null);
   const [diffTarget, setDiffTarget] = useState<StashEntry | null>(null);
   const [diffText, setDiffText] = useState("");
   const ref = useClickOutside(() => setOpen(false));
-
-  async function refreshStashes() {
-    if (!repoPath) return;
-    try {
-      setStashes(await fetchStashList(repoPath));
-    } catch {
-      setStashes([]);
-    }
-  }
-
-  async function toggleOpen() {
-    if (!open) await refreshStashes();
-    setOpen((o) => !o);
-  }
 
   async function showDiff(s: StashEntry) {
     setOpen(false);
@@ -145,7 +132,7 @@ function StashSplitButton({ hasChanges }: { hasChanges: boolean }) {
       <button
         className="btn-toolbar btn-caret"
         disabled={busy}
-        onClick={toggleOpen}
+        onClick={() => setOpen((o) => !o)}
         aria-label="Stash options"
       >
         ▾

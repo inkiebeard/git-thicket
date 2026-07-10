@@ -13,6 +13,7 @@ import {
   type RefInfo,
   type RemoteInfo,
   type ResetMode,
+  type StashEntry,
   type WorkingFileEntry,
   addRemote,
   aheadBehind as fetchAheadBehind,
@@ -49,6 +50,7 @@ import {
   stagePath,
   stagePaths,
   stashDrop,
+  stashList,
   stashPop,
   stashPush,
   unstageAll,
@@ -71,6 +73,7 @@ export interface RepoTab {
   branch: string | null;
   aheadBehind: AheadBehind | null;
   remotes: RemoteInfo[];
+  stashes: StashEntry[];
   loadingCommits: boolean;
   error: string | null;
 
@@ -101,6 +104,7 @@ function makeTab(repoPath: string): RepoTab {
     branch: null,
     aheadBehind: null,
     remotes: [],
+    stashes: [],
     loadingCommits: true,
     error: null,
     selectedSha: null,
@@ -251,13 +255,14 @@ export const useRepoStore = create<RepoState>((set, get) => {
   async function loadTabData(repoPath: string) {
     updateTab(repoPath, { loadingCommits: true, error: null });
     try {
-      const [commits, refs, branch, remotes] = await Promise.all([
+      const [commits, refs, branch, remotes, stashes] = await Promise.all([
         listCommits(repoPath, get().showRemoteBranches),
         listRefs(repoPath),
         currentBranch(repoPath),
         listRemotes(repoPath).catch(() => []),
+        stashList(repoPath).catch(() => []),
       ]);
-      updateTab(repoPath, { commits, refs, branch, remotes, loadingCommits: false });
+      updateTab(repoPath, { commits, refs, branch, remotes, stashes, loadingCommits: false });
       loadAheadBehind(repoPath);
     } catch (e) {
       updateTab(repoPath, { error: String(e), loadingCommits: false });
@@ -275,11 +280,12 @@ export const useRepoStore = create<RepoState>((set, get) => {
   // common case) causes zero re-renders.
   async function loadTabDataQuiet(repoPath: string) {
     try {
-      const [commits, refs, branch, remotes] = await Promise.all([
+      const [commits, refs, branch, remotes, stashes] = await Promise.all([
         listCommits(repoPath, get().showRemoteBranches),
         listRefs(repoPath),
         currentBranch(repoPath),
         listRemotes(repoPath).catch(() => []),
+        stashList(repoPath).catch(() => []),
       ]);
       const tab = get().tabs.find((t) => t.repoPath === repoPath);
       if (!tab) return;
@@ -288,6 +294,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
       if (!sameData(refs, tab.refs)) patch.refs = refs;
       if (branch !== tab.branch) patch.branch = branch;
       if (!sameData(remotes, tab.remotes)) patch.remotes = remotes;
+      if (!sameData(stashes, tab.stashes)) patch.stashes = stashes;
       if (Object.keys(patch).length > 0) updateTab(repoPath, patch);
       loadAheadBehind(repoPath);
     } catch {
