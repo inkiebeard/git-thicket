@@ -16,6 +16,9 @@ const ROW_HEIGHT = 28;
 const LANE_WIDTH = 16;
 const DOT_RADIUS = 4;
 const GRAPH_PADDING = 10;
+const GRAPH_COLUMN_MIN_WIDTH = 40;
+const REFS_AUTO_FIT_GAP = 4;
+const AUTO_FIT_PADDING = 12;
 
 type ColumnKey = "changes" | "message" | "date" | "author" | "sha";
 
@@ -239,7 +242,7 @@ function DataCell({
       const hasChanges =
         showChanges && (node.commit.insertions > 0 || node.commit.deletions > 0);
       return (
-        <div className="commit-changes" style={{ width }}>
+        <div className="commit-changes" data-col="changes" style={{ width }}>
           {hasChanges && (
             <>
               <span className="commit-changes-add">+{node.commit.insertions}</span>
@@ -253,6 +256,7 @@ function DataCell({
       return (
         <div
           className="commit-subject"
+          data-col="message"
           title={node.commit.subject}
           style={{ width, flexShrink: 0 }}
         >
@@ -261,19 +265,19 @@ function DataCell({
       );
     case "date":
       return (
-        <div className="commit-date" style={{ width }}>
+        <div className="commit-date" data-col="date" style={{ width }}>
           {new Date(node.commit.date).toLocaleDateString()}
         </div>
       );
     case "author":
       return (
-        <div className="commit-author" style={{ width }}>
+        <div className="commit-author" data-col="author" style={{ width }}>
           {node.commit.author}
         </div>
       );
     case "sha":
       return (
-        <div className="commit-hash" style={{ width }}>
+        <div className="commit-hash" data-col="sha" style={{ width }}>
           {node.commit.hash.slice(0, 7)}
         </div>
       );
@@ -294,22 +298,26 @@ function GhostDataCell({
   switch (columnKey) {
     case "message":
       return (
-        <div className="commit-subject commit-ghost-label" style={{ width, flexShrink: 0 }}>
+        <div
+          className="commit-subject commit-ghost-label"
+          data-col="message"
+          style={{ width, flexShrink: 0 }}
+        >
           {subject}
         </div>
       );
     case "sha":
       return (
-        <div className="commit-hash commit-ghost-count" style={{ width }}>
+        <div className="commit-hash commit-ghost-count" data-col="sha" style={{ width }}>
           {changedFileCount}
         </div>
       );
     case "changes":
-      return <div className="commit-changes" style={{ width }} />;
+      return <div className="commit-changes" data-col="changes" style={{ width }} />;
     case "date":
-      return <div className="commit-date" style={{ width }} />;
+      return <div className="commit-date" data-col="date" style={{ width }} />;
     case "author":
-      return <div className="commit-author" style={{ width }} />;
+      return <div className="commit-author" data-col="author" style={{ width }} />;
   }
 }
 
@@ -354,15 +362,15 @@ export function CommitGraph() {
   // message/author/path lengths) — CommitGraph is remounted (via `key` in
   // App.tsx) on repo switch so these lazy-init from the new repo's storage.
   const { order, moveColumn } = useColumnOrder(DEFAULT_COLUMN_ORDER, "thicket:commitColOrder");
-  const { widths: colWidths, resize: resizeCol } = useColumnWidths(
+  const { widths: colWidths, resize: resizeCol, setWidth: setColWidth } = useColumnWidths(
     DEFAULT_COLUMN_WIDTHS,
     `thicket:commitColWidths2:${repoPath}`,
   );
-  const { widths: refsWidths, resize: resizeRefsCol } = useResizableWidths(
-    [REFS_COLUMN_INITIAL_WIDTH],
-    `thicket:commitRefsColWidth:${repoPath}`,
-    60,
-  );
+  const {
+    widths: refsWidths,
+    resize: resizeRefsCol,
+    setWidth: setRefsColWidth,
+  } = useResizableWidths([REFS_COLUMN_INITIAL_WIDTH], `thicket:commitRefsColWidth:${repoPath}`, 60);
   const refsWidth = refsWidths[0];
 
   const refMap = useMemo(() => refsByHash(visibleRefs(refs)), [refs]);
@@ -382,10 +390,25 @@ export function CommitGraph() {
     }
     return base;
   }, [commits, changedFileCount, headHash]);
+  // Natural width the graph needs to show every lane unclipped — grows
+  // unbounded with branch count, so it's also used as the auto-fit target
+  // and as the initial value of the (separately capped) column width below.
   const graphWidth = useMemo(
     () => laneX(maxLane(nodes) + 1) + GRAPH_PADDING,
     [nodes],
   );
+  const {
+    widths: graphColWidths,
+    resize: resizeGraphCol,
+    setWidth: setGraphColWidth,
+  } = useResizableWidths(
+    [graphWidth],
+    `thicket:commitGraphColWidth:${repoPath}`,
+    GRAPH_COLUMN_MIN_WIDTH,
+  );
+  // A cap, not a fixed size: repos with few branches still render at their
+  // natural (smaller) width instead of being padded out to a stale max.
+  const graphColWidth = Math.min(graphColWidths[0], graphWidth);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -431,6 +454,48 @@ export function CommitGraph() {
     };
   }
 
+  /** Widest currently-rendered cell for a text column — rows outside the
+   * virtualized window aren't measured, matching what's actually visible. */
+  function measureTextColumn(columnKey: ColumnKey): number | null {
+    const cells = parentRef.current?.querySelectorAll<HTMLElement>(`[data-col="${columnKey}"]`);
+    if (!cells || cells.length === 0) return null;
+    let max = 0;
+    cells.forEach((cell) => (max = Math.max(max, cell.scrollWidth)));
+    return max;
+  }
+
+  /** Ref badges wrap instead of overflowing, so scrollWidth on the row can't
+   * be used directly — sum each row's badge widths to get its unwrapped width. */
+  function measureRefsColumn(): number | null {
+    const rows = parentRef.current?.querySelectorAll<HTMLElement>(".commit-refs-cell");
+    if (!rows || rows.length === 0) return null;
+    let max = 0;
+    let found = false;
+    rows.forEach((row) => {
+      const badges = row.querySelectorAll<HTMLElement>(".ref-badge");
+      if (badges.length === 0) return;
+      found = true;
+      let sum = REFS_AUTO_FIT_GAP * (badges.length - 1);
+      badges.forEach((badge) => (sum += badge.offsetWidth));
+      max = Math.max(max, sum);
+    });
+    return found ? max : null;
+  }
+
+  function handleRefsColAutoFit() {
+    const measured = measureRefsColumn();
+    if (measured != null) setRefsColWidth(0, measured + AUTO_FIT_PADDING);
+  }
+
+  function handleGraphColAutoFit() {
+    setGraphColWidth(0, graphWidth);
+  }
+
+  function handleDataColAutoFit(key: ColumnKey) {
+    const measured = measureTextColumn(key);
+    if (measured != null) setColWidth(key, measured + AUTO_FIT_PADDING);
+  }
+
   if (loadingCommits) {
     return <div className="empty-state">Loading commits…</div>;
   }
@@ -444,9 +509,18 @@ export function CommitGraph() {
           <div className="commit-list-header">
             <div className="commit-list-header-cell-wrap" style={{ width: refsWidth }}>
               <div className="commit-list-header-cell commit-list-header-cell-fixed">Refs</div>
-              <ResizeHandle onDrag={(dx) => resizeRefsCol(0, dx)} />
+              <ResizeHandle
+                onDrag={(dx) => resizeRefsCol(0, dx)}
+                onDoubleClick={handleRefsColAutoFit}
+              />
             </div>
-            <div style={{ width: graphWidth, flexShrink: 0 }} />
+            <div className="commit-list-header-cell-wrap" style={{ width: graphColWidth }}>
+              <div className="commit-list-header-cell commit-list-header-cell-fixed">Graph</div>
+              <ResizeHandle
+                onDrag={(dx) => resizeGraphCol(0, dx)}
+                onDoubleClick={handleGraphColAutoFit}
+              />
+            </div>
             {order.map((key) => (
               <div
                 key={key}
@@ -477,7 +551,10 @@ export function CommitGraph() {
                   )}
                   {COLUMN_LABELS[key]}
                 </div>
-                <ResizeHandle onDrag={(dx) => resizeCol(key, dx)} />
+                <ResizeHandle
+                  onDrag={(dx) => resizeCol(key, dx)}
+                  onDoubleClick={() => handleDataColAutoFit(key)}
+                />
               </div>
             ))}
           </div>
@@ -503,9 +580,11 @@ export function CommitGraph() {
                     onClick={selectWorkingTree}
                   >
                     <div className="commit-refs-cell" style={{ width: refsWidth }} />
-                    <svg width={graphWidth} height={ROW_HEIGHT} className="commit-graph-svg">
-                      <RowGraphic node={node} />
-                    </svg>
+                    <div className="commit-graph-cell" style={{ width: graphColWidth }}>
+                      <svg width={graphWidth} height={ROW_HEIGHT} className="commit-graph-svg">
+                        <RowGraphic node={node} />
+                      </svg>
+                    </div>
                     {order.map((key) => (
                       <GhostDataCell
                         key={key}
@@ -547,9 +626,11 @@ export function CommitGraph() {
                       onRefDoubleClick={handleRefDoubleClick}
                     />
                   </div>
-                  <svg width={graphWidth} height={ROW_HEIGHT} className="commit-graph-svg">
-                    <RowGraphic node={node} />
-                  </svg>
+                  <div className="commit-graph-cell" style={{ width: graphColWidth }}>
+                    <svg width={graphWidth} height={ROW_HEIGHT} className="commit-graph-svg">
+                      <RowGraphic node={node} />
+                    </svg>
+                  </div>
                   {order.map((key) => (
                     <DataCell
                       key={key}

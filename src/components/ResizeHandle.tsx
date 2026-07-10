@@ -2,10 +2,12 @@ import { useEffect, useRef } from "react";
 
 interface ResizeHandleProps {
   onDrag: (delta: number) => void;
+  /** Auto-fit: shrink/grow the column to its widest visible content + a small padding. */
+  onDoubleClick?: () => void;
   axis?: "x" | "y";
 }
 
-export function ResizeHandle({ onDrag, axis = "x" }: ResizeHandleProps) {
+export function ResizeHandle({ onDrag, onDoubleClick, axis = "x" }: ResizeHandleProps) {
   const dragging = useRef(false);
   const last = useRef(0);
   const onDragRef = useRef(onDrag);
@@ -42,6 +44,7 @@ export function ResizeHandle({ onDrag, axis = "x" }: ResizeHandleProps) {
     <div
       className={axis === "x" ? "pane-divider" : "pane-divider-horizontal"}
       onMouseDown={onMouseDown}
+      onDoubleClick={onDoubleClick}
     />
   );
 }

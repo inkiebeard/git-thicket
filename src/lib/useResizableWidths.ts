@@ -29,5 +29,13 @@ export function useResizableWidths(
     });
   }
 
-  return { widths, resize };
+  function setWidth(index: number, value: number) {
+    setWidths((prev) => {
+      const next = [...prev];
+      next[index] = Math.max(minWidth, value);
+      return next;
+    });
+  }
+
+  return { widths, resize, setWidth };
 }

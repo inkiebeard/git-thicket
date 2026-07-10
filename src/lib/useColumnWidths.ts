@@ -33,5 +33,12 @@ export function useColumnWidths<K extends string>(
     }));
   }
 
-  return { widths, resize };
+  function setWidth(key: K, value: number) {
+    setWidths((prev) => ({
+      ...prev,
+      [key]: Math.max(MIN_WIDTH, value),
+    }));
+  }
+
+  return { widths, resize, setWidth };
 }

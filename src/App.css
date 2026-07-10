@@ -835,6 +835,14 @@ body {
   flex-shrink: 0;
 }
 
+/* Fixed-width, clipped viewport onto the (possibly wider) graph SVG — lets
+   the graph column be shrunk independently of how many lanes/branches a
+   repo has, instead of forcing the whole app to make room for all of them. */
+.commit-graph-cell {
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
 /* Refs get their own dedicated column, positioned before the graph — kept
    separate from the Message column so a commit with several branch/tag
    badges doesn't push the message text (and everything after it) out of
