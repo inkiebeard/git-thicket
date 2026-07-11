@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { getBackgroundFetchEnabled, getBackgroundFetchIntervalSec } from "../lib/backgroundFetchSettings";
 import {
@@ -58,6 +59,8 @@ import {
   unstageAll,
   unstagePath,
   unstagePaths,
+  unwatchRepo,
+  watchRepo,
 } from "../api/git";
 
 export interface Toast {
@@ -310,19 +313,26 @@ export const useRepoStore = create<RepoState>((set, get) => {
     loadWorkingStatus(repoPath, true);
   }
 
-  // Polls each open tab's remote so ahead/behind and incoming refs stay
-  // current without the user having to click Fetch. Skips a tab that's
-  // mid-action (busy), has no remote configured, or whose previous poll is
-  // still running — a fetch that outlasts the interval (slow network, short
-  // interval) must not stack a second fetch on top of itself.
+  // Polls each open tab so its commit graph, refs, and working-tree status
+  // stay current without the user having to click Fetch or switch tabs —
+  // covers commits/edits made outside the app (another terminal, an editor,
+  // a second git-thicket window). The "background fetch" setting only gates
+  // the network part (`git fetch` against a remote); the local-only refresh
+  // below runs unconditionally, since a repo with no remote configured (or
+  // the setting turned off) still needs to notice its own local changes.
+  // Skips a tab that's mid-action (busy) or whose previous poll is still
+  // running — a fetch that outlasts the interval (slow network, short
+  // interval) must not stack a second one on top of itself.
   const backgroundFetchInFlight = new Set<string>();
-  async function backgroundFetch(repoPath: string) {
+  async function backgroundRefresh(repoPath: string) {
     const tab = get().tabs.find((t) => t.repoPath === repoPath);
-    if (!tab || tab.busy || tab.remotes.length === 0) return;
+    if (!tab || tab.busy) return;
     if (backgroundFetchInFlight.has(repoPath)) return;
     backgroundFetchInFlight.add(repoPath);
     try {
-      await fetchAll(repoPath);
+      if (getBackgroundFetchEnabled() && tab.remotes.length > 0) {
+        await fetchAll(repoPath);
+      }
       await loadTabDataQuiet(repoPath);
     } catch {
       // Unattended poll — nothing to surface.
@@ -332,19 +342,44 @@ export const useRepoStore = create<RepoState>((set, get) => {
   }
 
   // Self-rescheduling rather than setInterval so a change to the configured
-  // interval (or toggling it off) in Settings is picked up on the next tick
-  // instead of requiring an app restart.
+  // interval in Settings is picked up on the next tick instead of requiring
+  // an app restart.
   function scheduleBackgroundFetch() {
     setTimeout(() => {
-      if (getBackgroundFetchEnabled()) {
-        for (const tab of get().tabs) {
-          backgroundFetch(tab.repoPath);
-        }
+      for (const tab of get().tabs) {
+        backgroundRefresh(tab.repoPath);
       }
       scheduleBackgroundFetch();
     }, getBackgroundFetchIntervalSec() * 1000);
   }
   scheduleBackgroundFetch();
+
+  // Only the active tab gets a filesystem watcher — the backend keeps at
+  // most one alive, so pointing it at a new repo implicitly stops the old
+  // one. A watcher is a responsiveness bonus on top of the poll above, not
+  // a replacement: it can fail to start (OS watch-handle limits) or miss
+  // events (network drives, some editors' atomic-save-via-rename), so
+  // polling keeps running regardless. Always paired with an immediate quiet
+  // refresh, since switching tabs should show this repo's true current
+  // state right away rather than waiting for either the watcher or the next
+  // poll tick to notice whatever changed while it wasn't the active tab.
+  function activateRepo(repoPath: string | null) {
+    if (repoPath) {
+      watchRepo(repoPath).catch(() => {});
+      loadTabDataQuiet(repoPath);
+    } else {
+      unwatchRepo().catch(() => {});
+    }
+  }
+
+  // Debounced on the backend, so this fires at most once per ~400ms of
+  // filesystem churn rather than per touched file.
+  listen<string>("repo-changed", (event) => {
+    const activePath = get().activeRepoPath;
+    if (activePath && event.payload === activePath) {
+      loadTabDataQuiet(activePath);
+    }
+  });
 
   async function runAction(
     repoPath: string,
@@ -418,6 +453,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
         tabs[0]?.repoPath ||
         null;
       set({ activeRepoPath: active });
+      activateRepo(active);
     },
 
     openRepo: async (path: string) => {
@@ -425,6 +461,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
       if (existing) {
         set({ activeRepoPath: path });
         saveSession(get().tabs, path);
+        activateRepo(path);
         return;
       }
       const tab = makeTab(path);
@@ -434,6 +471,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
         return { tabs, activeRepoPath: path };
       });
       await loadTabData(path);
+      watchRepo(path).catch(() => {});
     },
 
     closeTab: (path: string) => {
@@ -442,6 +480,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
         let activeRepoPath = state.activeRepoPath;
         if (activeRepoPath === path) {
           activeRepoPath = tabs[tabs.length - 1]?.repoPath ?? null;
+          activateRepo(activeRepoPath);
         }
         saveSession(tabs, activeRepoPath);
         return { tabs, activeRepoPath };
@@ -451,6 +490,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
     setActiveTab: (path: string) => {
       set({ activeRepoPath: path });
       saveSession(get().tabs, path);
+      activateRepo(path);
     },
 
     refreshRepo: async () => {

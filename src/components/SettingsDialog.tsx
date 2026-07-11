@@ -79,7 +79,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
         <div className="modal-title">Settings</div>
 
         <div className="settings-section">
-          <div className="settings-section-title">Background fetch</div>
+          <div className="settings-section-title">Background sync</div>
           <label className="settings-row">
             <span>Automatically fetch from remotes in the background</span>
             <input
@@ -89,12 +89,14 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             />
           </label>
           <label className="settings-row">
-            <span>Interval (seconds, min {MIN_BACKGROUND_FETCH_INTERVAL_SEC})</span>
+            <span>
+              Refresh interval (seconds, min {MIN_BACKGROUND_FETCH_INTERVAL_SEC}) — also applies
+              to picking up local commits/changes when this repo has no remote, or fetch is off
+            </span>
             <input
               className="modal-input settings-number-input"
               type="number"
               min={MIN_BACKGROUND_FETCH_INTERVAL_SEC}
-              disabled={!fetchEnabled}
               value={fetchIntervalInput}
               onChange={(e) => setFetchIntervalInput(e.target.value)}
               onBlur={commitFetchInterval}

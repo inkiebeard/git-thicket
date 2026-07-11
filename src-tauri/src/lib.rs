@@ -1,6 +1,8 @@
 mod git;
+mod watch;
 
 use tauri_plugin_dialog::DialogExt;
+use watch::WatchState;
 
 #[tauri::command]
 async fn open_repo_dialog(app: tauri::AppHandle) -> Option<String> {
@@ -16,8 +18,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(WatchState::new())
         .invoke_handler(tauri::generate_handler![
             open_repo_dialog,
+            watch::watch_repo,
+            watch::unwatch_repo,
             git::is_git_repo,
             git::list_commits,
             git::list_refs,

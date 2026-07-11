@@ -107,6 +107,17 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
   return invoke<WorktreeInfo[]>("list_worktrees", { repoPath });
 }
 
+/** Starts watching `repoPath` for filesystem changes, replacing (and
+ * thereby stopping) whatever repo was previously being watched — the
+ * backend only ever keeps one watcher alive at a time, for the active tab. */
+export async function watchRepo(repoPath: string): Promise<void> {
+  return invoke<void>("watch_repo", { repoPath });
+}
+
+export async function unwatchRepo(): Promise<void> {
+  return invoke<void>("unwatch_repo");
+}
+
 export async function getCommitFiles(
   repoPath: string,
   sha: string,
