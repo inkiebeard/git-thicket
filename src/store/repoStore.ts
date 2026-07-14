@@ -313,14 +313,21 @@ export const useRepoStore = create<RepoState>((set, get) => {
     loadWorkingStatus(repoPath, true);
   }
 
-  // Polls each open tab so its commit graph, refs, and working-tree status
-  // stay current without the user having to click Fetch or switch tabs —
-  // covers commits/edits made outside the app (another terminal, an editor,
-  // a second git-thicket window). The "background fetch" setting only gates
-  // the network part (`git fetch` against a remote); the local-only refresh
-  // below runs unconditionally, since a repo with no remote configured (or
-  // the setting turned off) still needs to notice its own local changes.
-  // Skips a tab that's mid-action (busy) or whose previous poll is still
+  // Polls only the *active* tab so its commit graph, refs, and working-tree
+  // status stay current without the user having to click Fetch — covers
+  // commits/edits made outside the app (another terminal, an editor, a
+  // second git-thicket window). Background tabs are left alone: they get a
+  // full resync the moment the user switches to them (see activateRepo)
+  // instead of being kept warm the whole time they're not visible, same
+  // scope as the filesystem watcher above, which also only ever covers the
+  // active repo. Keeping every open tab polling in the background used to
+  // multiply how many concurrent `git` subprocesses spawn per tick by the
+  // tab count for essentially no benefit, since nothing was showing that
+  // data anyway. The "background fetch" setting only gates the network
+  // part (`git fetch` against a remote); the local-only refresh below runs
+  // unconditionally, since a repo with no remote configured (or the
+  // setting turned off) still needs to notice its own local changes.
+  // Skipped if the tab is mid-action (busy) or its previous poll is still
   // running — a fetch that outlasts the interval (slow network, short
   // interval) must not stack a second one on top of itself.
   const backgroundFetchInFlight = new Set<string>();
@@ -346,9 +353,8 @@ export const useRepoStore = create<RepoState>((set, get) => {
   // an app restart.
   function scheduleBackgroundFetch() {
     setTimeout(() => {
-      for (const tab of get().tabs) {
-        backgroundRefresh(tab.repoPath);
-      }
+      const { activeRepoPath } = get();
+      if (activeRepoPath) backgroundRefresh(activeRepoPath);
       scheduleBackgroundFetch();
     }, getBackgroundFetchIntervalSec() * 1000);
   }
@@ -434,6 +440,15 @@ export const useRepoStore = create<RepoState>((set, get) => {
       }
     },
 
+    // Only the tab that ends up active gets its data loaded eagerly here —
+    // the rest just get a placeholder tab and lazily load the first time
+    // the user actually switches to them (via activateRepo, same as any
+    // other tab switch). Restoring N tabs used to fire a full loadTabData
+    // (a good half-dozen concurrent `git` subprocess spawns each) for every
+    // one of them at once; for someone with many saved tabs that's a burst
+    // of dozens of processes touching the repo folder in the first second
+    // of startup, which is squarely what large multi-tab sessions don't
+    // need before the user has even looked at most of those tabs.
     restoreSession: async () => {
       const paths = loadSavedTabPaths();
       const savedActive = localStorage.getItem(ACTIVE_TAB_KEY);
@@ -445,7 +460,6 @@ export const useRepoStore = create<RepoState>((set, get) => {
             ? state
             : { tabs: [...state.tabs, makeTab(path)] },
         );
-        loadTabData(path);
       }
       const { tabs } = get();
       const active =
@@ -453,7 +467,10 @@ export const useRepoStore = create<RepoState>((set, get) => {
         tabs[0]?.repoPath ||
         null;
       set({ activeRepoPath: active });
-      activateRepo(active);
+      if (active) {
+        await loadTabData(active);
+        watchRepo(active).catch(() => {});
+      }
     },
 
     openRepo: async (path: string) => {
