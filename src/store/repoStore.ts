@@ -1,6 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import { getBackgroundFetchEnabled, getBackgroundFetchIntervalSec } from "../lib/backgroundFetchSettings";
+import {
+  getBackgroundFetchEnabled,
+  getBackgroundFetchIntervalSec,
+  getFileWatchEnabled,
+  setFileWatchEnabled as persistFileWatchEnabled,
+} from "../lib/backgroundFetchSettings";
 import {
   getShowRemoteBranches,
   setShowRemoteBranches as persistShowRemoteBranches,
@@ -137,6 +142,7 @@ interface RepoState {
   showRemoteBranches: boolean;
 
   setShowRemoteBranches: (value: boolean) => void;
+  setFileWatchEnabled: (value: boolean) => void;
   restoreSession: () => Promise<void>;
   openRepo: (path: string) => Promise<void>;
   closeTab: (path: string) => void;
@@ -371,7 +377,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
   // poll tick to notice whatever changed while it wasn't the active tab.
   function activateRepo(repoPath: string | null) {
     if (repoPath) {
-      watchRepo(repoPath).catch(() => {});
+      if (getFileWatchEnabled()) watchRepo(repoPath).catch(() => {});
       loadTabDataQuiet(repoPath);
     } else {
       unwatchRepo().catch(() => {});
@@ -440,6 +446,22 @@ export const useRepoStore = create<RepoState>((set, get) => {
       }
     },
 
+    // Applies immediately to whatever's active, rather than waiting for the
+    // next tab switch — flipping this off should visibly stop watching
+    // right away (useful for isolating whether the watcher itself is
+    // responsible for some platform quirk), and flipping it on should pick
+    // up the active repo without needing to switch away and back.
+    setFileWatchEnabled: (value: boolean) => {
+      persistFileWatchEnabled(value);
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      if (value) {
+        watchRepo(activeRepoPath).catch(() => {});
+      } else {
+        unwatchRepo().catch(() => {});
+      }
+    },
+
     // Only the tab that ends up active gets its data loaded eagerly here —
     // the rest just get a placeholder tab and lazily load the first time
     // the user actually switches to them (via activateRepo, same as any
@@ -469,7 +491,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
       set({ activeRepoPath: active });
       if (active) {
         await loadTabData(active);
-        watchRepo(active).catch(() => {});
+        if (getFileWatchEnabled()) watchRepo(active).catch(() => {});
       }
     },
 
@@ -488,7 +510,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
         return { tabs, activeRepoPath: path };
       });
       await loadTabData(path);
-      watchRepo(path).catch(() => {});
+      if (getFileWatchEnabled()) watchRepo(path).catch(() => {});
     },
 
     closeTab: (path: string) => {

@@ -3,9 +3,11 @@ import {
   MIN_BACKGROUND_FETCH_INTERVAL_SEC,
   getBackgroundFetchEnabled,
   getBackgroundFetchIntervalSec,
+  getFileWatchEnabled,
   setBackgroundFetchEnabled,
   setBackgroundFetchIntervalSec,
 } from "../lib/backgroundFetchSettings";
+import { useRepoStore } from "../store/repoStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ModalOverlay } from "./ModalOverlay";
 
@@ -53,6 +55,8 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
   const [fetchIntervalInput, setFetchIntervalInput] = useState(() =>
     String(getBackgroundFetchIntervalSec()),
   );
+  const [fileWatchEnabled, setFileWatchEnabledState] = useState(getFileWatchEnabled);
+  const setFileWatchEnabled = useRepoStore((s) => s.setFileWatchEnabled);
 
   function clearRecentRepos() {
     localStorage.removeItem(RECENT_REPOS_KEY);
@@ -62,6 +66,11 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
   function updateFetchEnabled(value: boolean) {
     setFetchEnabled(value);
     setBackgroundFetchEnabled(value);
+  }
+
+  function updateFileWatchEnabled(value: boolean) {
+    setFileWatchEnabledState(value);
+    setFileWatchEnabled(value);
   }
 
   function commitFetchInterval() {
@@ -103,6 +112,18 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitFetchInterval();
               }}
+            />
+          </label>
+          <label className="settings-row">
+            <span>
+              Watch the active repo's files for changes, for near-instant updates instead of
+              waiting on the refresh interval above — turn off if this causes issues (e.g.
+              repeated file-access prompts on macOS)
+            </span>
+            <input
+              type="checkbox"
+              checked={fileWatchEnabled}
+              onChange={(e) => updateFileWatchEnabled(e.target.checked)}
             />
           </label>
         </div>
