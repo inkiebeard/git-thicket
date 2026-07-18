@@ -72,6 +72,7 @@ pub fn run() {
             git::unstage_all,
             git::commit,
             git::get_working_file_diff,
+            git::create_pull_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

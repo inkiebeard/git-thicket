@@ -495,3 +495,14 @@ export async function getWorkingFileDiff(
 ): Promise<string> {
   return invoke<string>("get_working_file_diff", { repoPath, path, staged, untracked });
 }
+
+export async function createPullRequest(
+  repoPath: string,
+  currentBranch: string,
+  targetBranch: string,
+  title: string,
+  description: string,
+  draft: boolean,
+): Promise<string> {
+  return invoke<string>("create_pull_request", { repoPath, currentBranch, targetBranch, title, description, draft });
+}

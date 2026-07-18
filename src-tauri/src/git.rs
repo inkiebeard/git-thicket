@@ -1111,3 +1111,53 @@ pub fn get_file_diff(repo_path: String, sha: String, file_path: String) -> Resul
         )
     }
 }
+
+/// Creates a pull request for the given branch using GitHub CLI (gh).
+/// Automatically pushes the branch if it hasn't been pushed yet.
+#[tauri::command(async)]
+pub fn create_pull_request(
+    repo_path: String,
+    current_branch: String,
+    target_branch: String,
+    title: String,
+    description: String,
+    draft: bool,
+) -> Result<String, String> {
+    // First, check if the current branch is already pushed
+    let upstream_check = run_git(&repo_path, &["rev-parse", "--abbrev-ref", &format!("{}@{{upstream}}", current_branch)]);
+    
+    let needs_push = match upstream_check {
+        Err(_) => true,
+        Ok(output) => output.trim().is_empty(),
+    };
+    
+    // Push the branch if needed
+    if needs_push {
+        run_git(&repo_path, &["push", "-u", "origin", &current_branch])?;
+    }
+    
+    // Create the PR using GitHub CLI
+    let mut args: Vec<&str> = vec!["pr", "create", "--head", &current_branch, "--base", &target_branch, "--title", &title];
+    
+    if !description.is_empty() {
+        args.push("--body");
+        args.push(&description);
+    }
+    
+    if draft {
+        args.push("--draft");
+    }
+    
+    // Use 'gh' command instead of git
+    let output = Command::new("gh")
+        .current_dir(&repo_path)
+        .args(&args)
+        .output()
+        .map_err(|e| format!("GitHub CLI not found or error: {}", e))?;
+    
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}

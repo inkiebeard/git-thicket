@@ -29,6 +29,7 @@ import {
   cherryPick,
   commitChanges,
   createBranch,
+  createPullRequest,
   createTag,
   currentBranch,
   deleteBranch,
@@ -212,6 +213,7 @@ interface RepoState {
   doAbortConflict: () => Promise<void>;
   doCherryPickMultiple: (shas: string[]) => Promise<void>;
   doSquashCommits: (shas: string[]) => Promise<void>;
+  doCreatePullRequest: (currentBranch: string, targetBranch: string, title: string, description: string, draft: boolean) => Promise<void>;
   doResolveConflict: (path: string, content: string) => Promise<void>;
 }
 
@@ -1247,6 +1249,14 @@ export const useRepoStore = create<RepoState>((set, get) => {
 
       // Clear selection
       get().clearCommitsSelection();
+    },
+
+    doCreatePullRequest: async (currentBranch: string, targetBranch: string, title: string, description: string, draft: boolean) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Create pull request", () =>
+        createPullRequest(activeRepoPath, currentBranch, targetBranch, title, description, draft),
+      );
     },
   };
 });
