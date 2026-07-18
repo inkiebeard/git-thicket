@@ -10,6 +10,7 @@ import {
   getShowRemoteBranches,
   setShowRemoteBranches as persistShowRemoteBranches,
 } from "../lib/graphSettings";
+import { isConflicted } from "../lib/conflicts";
 import {
   type AheadBehind,
   type CommitDetail,
@@ -49,6 +50,8 @@ import {
   push,
   pushTag,
   rebaseBranch,
+  rebaseContinue,
+  rebaseAbort,
   renameBranch,
   resetToCommit,
   resolveConflict,
@@ -89,6 +92,7 @@ export interface RepoTab {
   error: string | null;
 
   selectedSha: string | null;
+  selectedShas: string[]; // Multiple selected commits for batch operations
   commitDetail: CommitDetail | null;
   loadingDetail: boolean;
   commitFiles: FileChange[];
@@ -102,6 +106,13 @@ export interface RepoTab {
   selectedFileStaged: boolean;
   commitMessage: string;
   amend: boolean;
+
+  /** Tracks any merge conflict in progress (stash pop, rebase, cherry-pick, etc.) */
+  mergeConflictInProgress?: {
+    operation: "stash-pop" | "rebase" | "cherry-pick" | "merge";
+    operationLabel: string; // "stash pop", "rebase onto main", etc.
+    stashIndex?: number; // For stash pop operations
+  };
 
   busy: boolean;
   toast: Toast | null;
@@ -120,6 +131,7 @@ function makeTab(repoPath: string): RepoTab {
     loadingCommits: true,
     error: null,
     selectedSha: null,
+    selectedShas: [],
     commitDetail: null,
     loadingDetail: false,
     commitFiles: [],
@@ -149,6 +161,9 @@ interface RepoState {
   setActiveTab: (path: string) => void;
   refreshRepo: () => Promise<void>;
   selectCommit: (sha: string) => Promise<void>;
+  addCommitToSelection: (sha: string) => void;
+  toggleCommitSelection: (sha: string) => void;
+  clearCommitsSelection: () => void;
   selectFile: (path: string) => void;
   clearSelection: () => void;
   dismissToast: () => void;
@@ -174,6 +189,8 @@ interface RepoState {
   doAddRemote: (name: string, url: string) => Promise<void>;
 
   doCheckoutRef: (refName: string) => Promise<void>;
+  doCheckoutRefWithStash: (refName: string) => Promise<void>;
+  doPrepareCommit: () => Promise<void>;
   doCreateBranch: (name: string, sha: string) => Promise<void>;
   doDeleteBranch: (name: string, force?: boolean) => Promise<void>;
   doRenameBranch: (oldName: string, newName: string) => Promise<void>;
@@ -189,6 +206,12 @@ interface RepoState {
   doResetToCommit: (sha: string, mode: ResetMode) => Promise<void>;
   doFastForwardBranch: (targetRef: string) => Promise<void>;
   doRebaseBranch: (targetRef: string) => Promise<void>;
+  doContinueRebase: () => Promise<void>;
+  doAbortRebase: () => Promise<void>;
+  doCompleteConflict: () => Promise<void>;
+  doAbortConflict: () => Promise<void>;
+  doCherryPickMultiple: (shas: string[]) => Promise<void>;
+  doSquashCommits: (shas: string[]) => Promise<void>;
   doResolveConflict: (path: string, content: string) => Promise<void>;
 }
 
@@ -570,6 +593,38 @@ export const useRepoStore = create<RepoState>((set, get) => {
       }
     },
 
+    addCommitToSelection: (sha: string) => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!tab) return;
+      
+      const current = tab.selectedShas;
+      if (!current.includes(sha)) {
+        updateTab(activeRepoPath, { selectedShas: [...current, sha] });
+      }
+    },
+
+    toggleCommitSelection: (sha: string) => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!tab) return;
+      
+      const current = tab.selectedShas;
+      if (current.includes(sha)) {
+        updateTab(activeRepoPath, { selectedShas: current.filter((s) => s !== sha) });
+      } else {
+        updateTab(activeRepoPath, { selectedShas: [...current, sha] });
+      }
+    },
+
+    clearCommitsSelection: () => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      updateTab(activeRepoPath, { selectedShas: [] });
+    },
+
     selectFile: (path: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
@@ -716,9 +771,76 @@ export const useRepoStore = create<RepoState>((set, get) => {
     },
 
     doStashPop: async (index?: number) => {
-      const { activeRepoPath } = get();
+      const { activeRepoPath, tabs } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, "Stash pop", () => stashPop(activeRepoPath, index));
+
+      const activeTab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!activeTab) return;
+
+      const success = await runAction(activeRepoPath, "Stash pop", async () => {
+        // Check if there are uncommitted changes that would conflict with the stash
+        const hasUncommittedChanges = activeTab.workingStatus.some(
+          (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
+        );
+
+        let stashed = false;
+
+        try {
+          // Stash changes if they exist to avoid conflicts during pop
+          if (hasUncommittedChanges) {
+            await stashPush(activeRepoPath, "thicket-stashpop-auto");
+            stashed = true;
+          }
+
+          // Pop the requested stash
+          const popResult = await stashPop(activeRepoPath, index);
+
+          // Try to unstash the changes we saved
+          if (stashed) {
+            try {
+              await stashPop(activeRepoPath, 0);
+              return `${popResult}\nAuto-unstashed your changes.`;
+            } catch (unstashError) {
+              // If unstashing fails, the stash is still available
+              return `${popResult}\nWarning: Could not auto-unstash changes. Stash available at stash@{0}.`;
+            }
+          }
+
+          return popResult;
+        } catch (popError) {
+          // If pop fails, try to unstash so the working tree isn't left empty
+          if (stashed) {
+            try {
+              await stashPop(activeRepoPath, 0);
+            } catch {
+              // Ignore unstash errors during error recovery
+            }
+          }
+          throw popError;
+        }
+      });
+
+      if (success) {
+        // Check if there are conflicts after pop
+        const updatedTab = tabs.find((t) => t.repoPath === activeRepoPath);
+        const conflicts = updatedTab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
+
+        if (conflicts.length > 0) {
+          // Find the stash that was popped to get its message for display
+          const stashIndex = index ?? 0;
+          const stashEntry = updatedTab?.stashes.find((s) => s.index === stashIndex);
+          const stashMessage = stashEntry?.message ?? `stash@{${stashIndex}}`;
+
+          // Set merge conflict in progress so the UI can show conflict dialog
+          updateTab(activeRepoPath, {
+            mergeConflictInProgress: {
+              operation: "stash-pop",
+              operationLabel: `stash pop: ${stashMessage}`,
+              stashIndex,
+            },
+          });
+        }
+      }
     },
 
     doStashDrop: async (index?: number) => {
@@ -737,6 +859,76 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runAction(activeRepoPath, "Checkout", () => checkoutRef(activeRepoPath, refName));
+    },
+
+    doCheckoutRefWithStash: async (refName: string) => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+      const activeTab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!activeTab) return;
+
+      await runAction(activeRepoPath, "Checkout", async () => {
+        // Check if there are uncommitted changes
+        const hasUncommittedChanges = activeTab.workingStatus.some(
+          (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
+        );
+
+        let stashed = false;
+
+        try {
+          // Stash changes if they exist
+          if (hasUncommittedChanges) {
+            await stashPush(activeRepoPath, "thicket-checkout-auto");
+            stashed = true;
+          }
+
+          // Perform the checkout
+          const checkoutResult = await checkoutRef(activeRepoPath, refName);
+
+          // Unstash changes if we stashed them
+          if (stashed) {
+            try {
+              await stashPop(activeRepoPath, 0);
+              return `${checkoutResult}\nUnstashed changes (auto-stashed before checkout).`;
+            } catch (unstashError) {
+              // If unstashing fails, the stash is still available, just show the checkout result
+              return `${checkoutResult}\nWarning: Could not auto-unstash changes. Stash available at stash@{0}.`;
+            }
+          }
+
+          return checkoutResult;
+        } catch (checkoutError) {
+          // If checkout fails, try to unstash so the working tree isn't left empty
+          if (stashed) {
+            try {
+              await stashPop(activeRepoPath, 0);
+            } catch {
+              // Ignore unstash errors during error recovery
+            }
+          }
+          throw checkoutError;
+        }
+      });
+    },
+
+    doPrepareCommit: async () => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+      const activeTab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!activeTab) return;
+
+      // Stage all changes
+      const allPaths = activeTab.workingStatus
+        .filter((f) => f.indexStatus !== "none" || f.worktreeStatus !== "none")
+        .map((f) => f.path);
+
+      if (allPaths.length > 0) {
+        await runQuiet(activeRepoPath, "Stage all", () => stagePaths(activeRepoPath, allPaths));
+      }
+
+      // Switch to working tree view
+      updateTab(activeRepoPath, { viewingWorkingTree: true });
+      await loadWorkingStatus(activeRepoPath);
     },
 
     doCreateBranch: async (name: string, sha: string) => {
@@ -836,9 +1028,160 @@ export const useRepoStore = create<RepoState>((set, get) => {
     },
 
     doRebaseBranch: async (targetRef: string) => {
-      const { activeRepoPath } = get();
+      const { activeRepoPath, tabs } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, "Rebase", () => rebaseBranch(activeRepoPath, targetRef));
+      const activeTab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!activeTab) return;
+
+      const success = await runAction(activeRepoPath, "Rebase", async () => {
+        // Check if there are uncommitted changes
+        const hasUncommittedChanges = activeTab.workingStatus.some(
+          (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
+        );
+
+        let stashed = false;
+
+        try {
+          // Stash changes if they exist
+          if (hasUncommittedChanges) {
+            await stashPush(activeRepoPath, "thicket-rebase-auto");
+            stashed = true;
+          }
+
+          // Perform the rebase
+          const rebaseResult = await rebaseBranch(activeRepoPath, targetRef);
+
+          // Unstash changes if we stashed them
+          if (stashed) {
+            try {
+              await stashPop(activeRepoPath, 0);
+              return `${rebaseResult}\nUnstashed changes (auto-stashed before rebase).`;
+            } catch (unstashError) {
+              // If unstashing fails, the stash is still available, just show the rebase result
+              return `${rebaseResult}\nWarning: Could not auto-unstash changes. Stash available at stash@{0}.`;
+            }
+          }
+
+          return rebaseResult;
+        } catch (rebaseError) {
+          // If rebase fails, try to unstash so the working tree isn't left empty
+          if (stashed) {
+            try {
+              await stashPop(activeRepoPath, 0);
+            } catch {
+              // Ignore unstash errors during error recovery
+            }
+          }
+          throw rebaseError;
+        }
+      });
+
+      if (success) {
+        // Check if there are conflicts after rebase
+        const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+        const conflicts = tab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
+
+        if (conflicts.length > 0) {
+          // Set merge conflict in progress so the UI can show conflict dialog
+          updateTab(activeRepoPath, {
+            mergeConflictInProgress: {
+              operation: "rebase",
+              operationLabel: `rebase onto ${targetRef}`,
+            },
+          });
+        }
+      }
+    },
+
+    doContinueRebase: async () => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!tab?.mergeConflictInProgress || tab.mergeConflictInProgress.operation !== "rebase")
+        return;
+
+      // Continue the rebase
+      const success = await runAction(activeRepoPath, "Continue rebase", () =>
+        rebaseContinue(activeRepoPath),
+      );
+
+      if (success) {
+        // Check if there are more conflicts
+        const updatedTab = tabs.find((t) => t.repoPath === activeRepoPath);
+        const conflicts = updatedTab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
+
+        if (conflicts.length === 0) {
+          // No more conflicts, clear the state
+          updateTab(activeRepoPath, { mergeConflictInProgress: undefined });
+        }
+        // Otherwise, keep the dialog open for next set of conflicts
+      }
+    },
+
+    doAbortRebase: async () => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!tab?.mergeConflictInProgress || tab.mergeConflictInProgress.operation !== "rebase")
+        return;
+
+      // Abort the rebase
+      const success = await runAction(activeRepoPath, "Abort rebase", () =>
+        rebaseAbort(activeRepoPath),
+      );
+
+      if (success) {
+        // Clear the conflict state
+        updateTab(activeRepoPath, { mergeConflictInProgress: undefined });
+      }
+    },
+
+    doCompleteConflict: async () => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      const conflict = tab?.mergeConflictInProgress;
+      if (!conflict) return;
+
+      if (conflict.operation === "stash-pop") {
+        // Drop the stash to complete the pop
+        const success = await runAction(activeRepoPath, "Complete stash pop", () =>
+          stashDrop(activeRepoPath, conflict.stashIndex ?? 0),
+        );
+
+        if (success) {
+          updateTab(activeRepoPath, { mergeConflictInProgress: undefined });
+        }
+      } else if (conflict.operation === "rebase") {
+        // Continue the rebase
+        await get().doContinueRebase();
+      }
+    },
+
+    doAbortConflict: async () => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      const conflict = tab?.mergeConflictInProgress;
+      if (!conflict) return;
+
+      if (conflict.operation === "stash-pop") {
+        // Reset to HEAD to discard the conflicted merge state
+        const success = await runAction(activeRepoPath, "Abort stash pop", () =>
+          resetToCommit(activeRepoPath, "HEAD", "hard"),
+        );
+
+        if (success) {
+          updateTab(activeRepoPath, { mergeConflictInProgress: undefined });
+        }
+      } else if (conflict.operation === "rebase") {
+        // Abort the rebase
+        await get().doAbortRebase();
+      }
     },
 
     doResolveConflict: async (path: string, content: string) => {
@@ -847,6 +1190,63 @@ export const useRepoStore = create<RepoState>((set, get) => {
       await runAction(activeRepoPath, "Resolve conflict", () =>
         resolveConflict(activeRepoPath, path, content),
       );
+    },
+
+    doCherryPickMultiple: async (shas: string[]) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath || shas.length === 0) return;
+
+      // Cherry-pick each commit in order, stopping on first conflict
+      for (const sha of shas) {
+        const success = await runAction(activeRepoPath, `Cherry-pick ${sha.slice(0, 7)}`, () =>
+          cherryPick(activeRepoPath, sha),
+        );
+        if (!success) {
+          // Cherry-pick stopped, keep selection to show which commits were intended
+          return;
+        }
+      }
+
+      // Clear selection after successful operation
+      get().clearCommitsSelection();
+    },
+
+    doSquashCommits: async (shas: string[]) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath || shas.length < 2) return;
+
+      // For squashing: need to do interactive rebase
+      // shas are in commit graph order (newest first usually)
+      // We rebase onto the parent of the oldest commit
+      const oldestSha = shas[shas.length - 1];
+
+      // Get the parent of the oldest commit
+      const parentRef = `${oldestSha}^`;
+
+      // Interactive rebase with squash script
+      // For now, we'll use a simple approach: rebase and let the user know to use rebase --interactive
+      // This is complex and might need a separate interactive rebase UI
+
+      const success = await runAction(activeRepoPath, "Rebase", () =>
+        rebaseBranch(activeRepoPath, parentRef),
+      );
+
+      if (success) {
+        const tab = get().tabs.find((t) => t.repoPath === activeRepoPath);
+        const conflicts = tab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
+
+        if (conflicts.length > 0) {
+          updateTab(activeRepoPath, {
+            mergeConflictInProgress: {
+              operation: "rebase",
+              operationLabel: `rebase for squash`,
+            },
+          });
+        }
+      }
+
+      // Clear selection
+      get().clearCommitsSelection();
     },
   };
 });

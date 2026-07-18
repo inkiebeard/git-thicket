@@ -41,13 +41,37 @@ both the frontend and the Rust backend.
 
 ## Building a release
 
+### Quick local build for your platform
+
 ```sh
-npm run tauri build
+npm run build:prod
 ```
 
-Produces a platform-native installer in `src-tauri/target/release/bundle/`
-(NSIS `.exe` on Windows, universal `.dmg` on macOS, `.deb`/`.rpm`/AppImage
-on Linux).
+Produces a platform-native executable in `src-tauri/target/release/bundle/`:
+- **macOS**: `Thicket.app`
+- **Windows**: MSI installer
+- **Linux**: AppImage
+
+### Platform-specific builds
+
+For macOS, you can build for specific architectures:
+
+```sh
+npm run build:prod:macos       # Universal (Intel + Apple Silicon)
+npm run build:prod:macos:intel # Intel only
+npm run build:prod:macos:arm   # Apple Silicon only
+```
+
+Or target specific platforms:
+
+```sh
+npm run build:prod:windows
+npm run build:prod:linux
+```
+
+See [BUILD.md](BUILD.md) for detailed platform-specific instructions and troubleshooting.
+
+### CI/CD release builds
 
 To build all three platforms at once via CI, push a version tag:
 

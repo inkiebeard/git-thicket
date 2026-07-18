@@ -15,6 +15,7 @@ import {
   type GraphNode,
 } from "../lib/graphLayout";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
+import { CheckoutWithChangesDialog } from "./CheckoutWithChangesDialog";
 import { CommitContextMenu } from "./CommitContextMenu";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
@@ -22,6 +23,7 @@ import { ReconcileBranchDialog } from "./ReconcileBranchDialog";
 import { RefContextMenu } from "./RefContextMenu";
 import { ResizeHandle } from "./ResizeHandle";
 import { StashDiffModal } from "./StashDiffModal";
+import { MergeConflictDialog } from "./MergeConflictDialog";
 
 const ROW_HEIGHT = 28;
 const LANE_WIDTH = 16;
@@ -417,15 +419,27 @@ export function CommitGraph() {
   );
   const stashes = activeTab?.stashes ?? [];
   const selectedSha = activeTab?.selectedSha ?? null;
+  const selectedShas = activeTab?.selectedShas ?? [];
   const loadingCommits = activeTab?.loadingCommits ?? false;
   const workingStatus = activeTab?.workingStatus ?? [];
   const viewingWorkingTree = activeTab?.viewingWorkingTree ?? false;
+  const mergeConflictInProgress = activeTab?.mergeConflictInProgress ?? null;
+  const repoPath = activeTab?.repoPath ?? "";
   const selectCommit = useRepoStore((s) => s.selectCommit);
+  const addCommitToSelection = useRepoStore((s) => s.addCommitToSelection);
+  const toggleCommitSelection = useRepoStore((s) => s.toggleCommitSelection);
+  const clearCommitsSelection = useRepoStore((s) => s.clearCommitsSelection);
+  const doCherryPickMultiple = useRepoStore((s) => s.doCherryPickMultiple);
+  const doSquashCommits = useRepoStore((s) => s.doSquashCommits);
   const selectWorkingTree = useRepoStore((s) => s.selectWorkingTree);
   const doCheckoutRef = useRepoStore((s) => s.doCheckoutRef);
+  const doCheckoutRefWithStash = useRepoStore((s) => s.doCheckoutRefWithStash);
+  const doPrepareCommit = useRepoStore((s) => s.doPrepareCommit);
   const doStashPush = useRepoStore((s) => s.doStashPush);
   const doStashPop = useRepoStore((s) => s.doStashPop);
   const doStashDrop = useRepoStore((s) => s.doStashDrop);
+  const doCompleteConflict = useRepoStore((s) => s.doCompleteConflict);
+  const doAbortConflict = useRepoStore((s) => s.doAbortConflict);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [refMenu, setRefMenu] = useState<RefMenuState | null>(null);
   const [workingTreeMenu, setWorkingTreeMenu] = useState<{ x: number; y: number } | null>(null);
@@ -440,10 +454,10 @@ export function CommitGraph() {
     remoteRef: RefInfo;
   } | null>(null);
   const [checkoutConfirmTarget, setCheckoutConfirmTarget] = useState<RefInfo | null>(null);
+  const [checkoutWithChangesTarget, setCheckoutWithChangesTarget] = useState<RefInfo | null>(null);
+  const [multiSelectMenu, setMultiSelectMenu] = useState<{ x: number; y: number } | null>(null);
   const [dragKey, setDragKey] = useState<ColumnKey | null>(null);
   const [showChanges, setShowChanges] = usePersistedBoolean(true, "thicket:showChangeCounts");
-
-  const repoPath = activeTab?.repoPath ?? "";
 
   // Column order is a personal reading-order preference shared across
   // repos; widths are repo-specific (different repos have very different
@@ -533,9 +547,31 @@ export function CommitGraph() {
     // mean to switch branches, so ask first any time there's working-tree
     // state that could be affected, rather than switching silently.
     if (changedFileCount > 0) {
-      setCheckoutConfirmTarget(ref);
+      // For remote branches with uncommitted changes, offer stash option
+      if (ref.kind === "remote-branch") {
+        setCheckoutWithChangesTarget(ref);
+      } else {
+        setCheckoutConfirmTarget(ref);
+      }
     } else {
       doCheckoutRef(ref.name);
+    }
+  }
+
+  function handleCommitClick(sha: string, e: React.MouseEvent) {
+    // Cmd/Ctrl + click: toggle selection (multi-select)
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      toggleCommitSelection(sha);
+    }
+    // Shift + click: add to selection
+    else if (e.shiftKey) {
+      e.preventDefault();
+      addCommitToSelection(sha);
+    }
+    // Regular click: single select and show details
+    else {
+      selectCommit(sha);
     }
   }
 
@@ -732,10 +768,16 @@ export function CommitGraph() {
                     key={node.commit.hash}
                     className={`commit-row commit-row-stash${isSelected ? " selected" : ""}`}
                     style={rowStyle}
-                    onClick={() => selectCommit(node.commit.hash)}
+                    onClick={(e) => handleCommitClick(node.commit.hash, e)}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setStashMenu({ x: e.clientX, y: e.clientY, stash });
+                      if (selectedShas.length > 1 && selectedShas.includes(node.commit.hash)) {
+                        // Right-click on multi-selected commits
+                        setMultiSelectMenu({ x: e.clientX, y: e.clientY });
+                      } else {
+                        // Right-click on stash
+                        setStashMenu({ x: e.clientX, y: e.clientY, stash });
+                      }
                     }}
                   >
                     <div className="commit-refs-cell" style={{ width: refsWidth }} />
@@ -758,20 +800,31 @@ export function CommitGraph() {
 
               const commitRefs = refMap.get(node.commit.hash) ?? [];
               const isSelected = node.commit.hash === selectedSha;
+              const isInSelection = selectedShas.includes(node.commit.hash);
               return (
                 <div
                   key={node.commit.hash}
-                  className={`commit-row${isSelected ? " selected" : ""}`}
+                  className={`commit-row${isSelected ? " selected" : ""}${isInSelection ? " multi-selected" : ""}`}
                   style={rowStyle}
-                  onClick={() => selectCommit(node.commit.hash)}
+                  onClick={(e) => handleCommitClick(node.commit.hash, e)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    setMenu({
-                      x: e.clientX,
-                      y: e.clientY,
-                      commit: node.commit,
-                      branches: commitRefs.filter((r) => r.kind === "branch"),
-                    });
+                    if (selectedShas.length > 1 && isInSelection) {
+                      // Right-click on multi-selected commits
+                      setMultiSelectMenu({ x: e.clientX, y: e.clientY });
+                    } else {
+                      // Regular commit context menu
+                      // Also add to selection if not already there
+                      if (!isInSelection) {
+                        clearCommitsSelection();
+                      }
+                      setMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        commit: node.commit,
+                        branches: commitRefs.filter((r) => r.kind === "branch"),
+                      });
+                    }
                   }}
                 >
                   <div className="commit-refs-cell" style={{ width: refsWidth }}>
@@ -898,6 +951,47 @@ export function CommitGraph() {
           onClose={() => setReconcileTarget(null)}
         />
       )}
+      {mergeConflictInProgress && repoPath && (
+        <MergeConflictDialog
+          repoPath={repoPath}
+          operationName={mergeConflictInProgress.operationLabel}
+          conflictedFiles={workingStatus}
+          onComplete={doCompleteConflict}
+          onAbort={doAbortConflict}
+        />
+      )}
+      {multiSelectMenu && selectedShas.length > 1 && (
+        <ContextMenu
+          x={multiSelectMenu.x}
+          y={multiSelectMenu.y}
+          onClose={() => setMultiSelectMenu(null)}
+          items={
+            [
+              {
+                label: `Cherry-pick all (${selectedShas.length} commits)`,
+                onSelect: () => {
+                  doCherryPickMultiple(selectedShas);
+                  setMultiSelectMenu(null);
+                },
+              },
+              {
+                label: `Squash (${selectedShas.length} commits)`,
+                onSelect: () => {
+                  doSquashCommits(selectedShas);
+                  setMultiSelectMenu(null);
+                },
+              },
+              {
+                label: "Clear selection",
+                onSelect: () => {
+                  clearCommitsSelection();
+                  setMultiSelectMenu(null);
+                },
+              },
+            ] satisfies ContextMenuEntry[]
+          }
+        />
+      )}
       {checkoutConfirmTarget && (
         <ConfirmDialog
           title={`Checkout "${checkoutConfirmTarget.name}"`}
@@ -908,6 +1002,20 @@ export function CommitGraph() {
             doCheckoutRef(checkoutConfirmTarget.name);
             setCheckoutConfirmTarget(null);
           }}
+        />
+      )}
+      {checkoutWithChangesTarget && (
+        <CheckoutWithChangesDialog
+          targetRefName={checkoutWithChangesTarget.name}
+          onStashAndCheckout={async () => {
+            await doCheckoutRefWithStash(checkoutWithChangesTarget.name);
+            setCheckoutWithChangesTarget(null);
+          }}
+          onPrepareCommit={async () => {
+            await doPrepareCommit();
+            setCheckoutWithChangesTarget(null);
+          }}
+          onCancel={() => setCheckoutWithChangesTarget(null)}
         />
       )}
     </div>

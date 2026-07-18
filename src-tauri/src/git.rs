@@ -864,6 +864,18 @@ pub fn rebase_branch(repo_path: String, target_ref: String) -> Result<String, St
     run_git(&repo_path, &["rebase", &target_ref])
 }
 
+/// Continues a rebase in progress after conflicts have been resolved.
+#[tauri::command(async)]
+pub fn rebase_continue(repo_path: String) -> Result<String, String> {
+    run_git(&repo_path, &["rebase", "--continue"])
+}
+
+/// Aborts an in-progress rebase, returning to the original branch state.
+#[tauri::command(async)]
+pub fn rebase_abort(repo_path: String) -> Result<String, String> {
+    run_git(&repo_path, &["rebase", "--abort"])
+}
+
 /// `mode`: "soft", "mixed", or "hard" — matches the `git reset --<mode>` flag.
 #[tauri::command(async)]
 pub fn reset_to_commit(repo_path: String, sha: String, mode: String) -> Result<String, String> {

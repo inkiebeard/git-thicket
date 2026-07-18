@@ -5,13 +5,21 @@
     "email": "aaron@inkiebeard.codes",
     "name": "Aaron Toomey"
   },
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "build:prod": "tauri build",
+    "build:prod:macos": "tauri build --target universal-apple-darwin",
+    "build:prod:macos:intel": "tauri build --target x86_64-apple-darwin",
+    "build:prod:macos:arm": "tauri build --target aarch64-apple-darwin",
+    "build:prod:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "build:prod:linux": "tauri build --target x86_64-unknown-linux-gnu",
     "version": "node scripts/sync-version.mjs && git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock"
   },
   "dependencies": {

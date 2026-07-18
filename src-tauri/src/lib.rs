@@ -59,6 +59,8 @@ pub fn run() {
             git::reset_to_commit,
             git::fast_forward_branch,
             git::rebase_branch,
+            git::rebase_continue,
+            git::rebase_abort,
             git::git_status,
             git::stage_path,
             git::unstage_path,

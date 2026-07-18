@@ -397,6 +397,14 @@ export async function rebaseBranch(repoPath: string, targetRef: string): Promise
   return invoke<string>("rebase_branch", { repoPath, targetRef });
 }
 
+export async function rebaseContinue(repoPath: string): Promise<string> {
+  return invoke<string>("rebase_continue", { repoPath });
+}
+
+export async function rebaseAbort(repoPath: string): Promise<string> {
+  return invoke<string>("rebase_abort", { repoPath });
+}
+
 export interface WorkingFileEntry {
   path: string;
   oldPath: string | null;
