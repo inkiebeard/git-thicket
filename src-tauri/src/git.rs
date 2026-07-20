@@ -645,45 +645,52 @@ pub fn push(
     force_mode: Option<String>,
     no_verify: Option<bool>,
 ) -> Result<String, String> {
-    let mut args = vec!["push"];
+    let mut args = vec!["push".to_string()];
     match force_mode.as_deref() {
-        Some("force") => args.push("--force"),
-        Some("force-with-lease") => args.push("--force-with-lease"),
+        Some("force") => args.push("--force".to_string()),
+        Some("force-with-lease") => args.push("--force-with-lease".to_string()),
         _ => {}
     }
     if no_verify.unwrap_or(false) {
-        args.push("--no-verify");
+        args.push("--no-verify".to_string());
     }
 
     // A branch that's never been pushed (or a remote that was just added)
     // has no upstream configured yet, so a plain `git push` fails with
     // "no upstream branch" — set one up automatically instead of erroring.
-    let has_upstream = run_git(
+    // Also handle stale/mismatched upstream tracking (e.g., after rebase).
+    let current_branch = run_git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string();
+    
+    let upstream_check = run_git(
         &repo_path,
         &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-    )
-    .is_ok();
+    );
+    
+    let needs_upstream = match upstream_check {
+        Ok(upstream) => {
+            // Check if upstream matches current branch (e.g., "refs/remotes/origin/luxinabox")
+            !upstream.contains(&format!("origin/{}", current_branch))
+        },
+        Err(_) => true,  // No upstream at all
+    };
 
-    let remote;
-    let branch;
-    if !has_upstream {
+    if needs_upstream {
         let remotes_output = run_git(&repo_path, &["remote"])?;
-        remote = remotes_output
+        let remote_name = remotes_output
             .lines()
             .next()
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| "No remote configured".to_string())?
             .to_string();
-        branch = run_git(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?
-            .trim()
-            .to_string();
-        args.push("--set-upstream");
-        args.push(&remote);
-        args.push(&branch);
+        args.push("--set-upstream".to_string());
+        args.push(remote_name);
+        args.push(current_branch);
     }
 
-    run_git(&repo_path, &args)
+    run_git_args(repo_path, args)
 }
 
 #[tauri::command(async)]
@@ -1123,17 +1130,14 @@ pub fn create_pull_request(
     description: String,
     draft: bool,
 ) -> Result<String, String> {
-    // First, check if the current branch is already pushed
-    let upstream_check = run_git(&repo_path, &["rev-parse", "--abbrev-ref", &format!("{}@{{upstream}}", current_branch)]);
+    // Check if the branch exists on the remote by trying to resolve origin/<branch>
+    let remote_branch_check = run_git(&repo_path, &["rev-parse", &format!("origin/{}", current_branch)]);
     
-    let needs_push = match upstream_check {
-        Err(_) => true,
-        Ok(output) => output.trim().is_empty(),
-    };
+    let needs_push = remote_branch_check.is_err();
     
-    // Push the branch if needed
+    // Push the branch if it doesn't exist on remote yet
     if needs_push {
-        run_git(&repo_path, &["push", "-u", "origin", &current_branch])?;
+        run_git(&repo_path, &["push", "origin", &current_branch])?;
     }
     
     // Create the PR using GitHub CLI

@@ -403,7 +403,18 @@ export const useRepoStore = create<RepoState>((set, get) => {
   function activateRepo(repoPath: string | null) {
     if (repoPath) {
       if (getFileWatchEnabled()) watchRepo(repoPath).catch(() => {});
-      loadTabDataQuiet(repoPath);
+      // If tab already has data, do a quiet background refresh.
+      // If tab is empty, do a full load (for newly-created tabs that haven't loaded yet).
+      const tab = get().tabs.find((t) => t.repoPath === repoPath);
+      if (tab && tab.commits.length > 0) {
+        // Tab has data, refresh quietly in background
+        (async () => {
+          await loadTabDataQuiet(repoPath);
+        })().catch(() => {});
+      } else if (tab && !tab.loadingCommits) {
+        // Tab is empty and not already loading, do a full load
+        loadTabData(repoPath).catch(() => {});
+      }
     } else {
       unwatchRepo().catch(() => {});
     }
