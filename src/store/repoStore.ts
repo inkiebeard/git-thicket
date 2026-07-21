@@ -1,9 +1,7 @@
-import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import {
   getBackgroundFetchEnabled,
   getBackgroundFetchIntervalSec,
-  getFileWatchEnabled,
   setFileWatchEnabled as persistFileWatchEnabled,
 } from "../lib/backgroundFetchSettings";
 import {
@@ -68,8 +66,6 @@ import {
   unstageAll,
   unstagePath,
   unstagePaths,
-  unwatchRepo,
-  watchRepo,
 } from "../api/git";
 
 export interface Toast {
@@ -156,6 +152,8 @@ interface RepoState {
 
   setShowRemoteBranches: (value: boolean) => void;
   setFileWatchEnabled: (value: boolean) => void;
+  loadTabDataFor: (repoPath: string) => Promise<void>;
+  loadWorkingStatusFor: (repoPath: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   openRepo: (path: string) => Promise<void>;
   closeTab: (path: string) => void;
@@ -392,43 +390,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
   scheduleBackgroundFetch();
 
   // Only the active tab gets a filesystem watcher — the backend keeps at
-  // most one alive, so pointing it at a new repo implicitly stops the old
-  // one. A watcher is a responsiveness bonus on top of the poll above, not
-  // a replacement: it can fail to start (OS watch-handle limits) or miss
-  // events (network drives, some editors' atomic-save-via-rename), so
-  // polling keeps running regardless. Always paired with an immediate quiet
-  // refresh, since switching tabs should show this repo's true current
-  // state right away rather than waiting for either the watcher or the next
-  // poll tick to notice whatever changed while it wasn't the active tab.
-  function activateRepo(repoPath: string | null) {
-    if (repoPath) {
-      if (getFileWatchEnabled()) watchRepo(repoPath).catch(() => {});
-      // If tab already has data, do a quiet background refresh.
-      // If tab is empty, do a full load (for newly-created tabs that haven't loaded yet).
-      const tab = get().tabs.find((t) => t.repoPath === repoPath);
-      if (tab && tab.commits.length > 0) {
-        // Tab has data, refresh quietly in background
-        (async () => {
-          await loadTabDataQuiet(repoPath);
-        })().catch(() => {});
-      } else if (tab && !tab.loadingCommits) {
-        // Tab is empty and not already loading, do a full load
-        loadTabData(repoPath).catch(() => {});
-      }
-    } else {
-      unwatchRepo().catch(() => {});
-    }
-  }
-
-  // Debounced on the backend, so this fires at most once per ~400ms of
-  // filesystem churn rather than per touched file.
-  listen<string>("repo-changed", (event) => {
-    const activePath = get().activeRepoPath;
-    if (activePath && event.payload === activePath) {
-      loadTabDataQuiet(activePath);
-    }
-  });
-
+  // most one alive, so pointing it at a new repo implicitly stops the old one.
   async function runAction(
     repoPath: string,
     label: string,
@@ -477,9 +439,6 @@ export const useRepoStore = create<RepoState>((set, get) => {
     setShowRemoteBranches: (value: boolean) => {
       persistShowRemoteBranches(value);
       set({ showRemoteBranches: value });
-      for (const tab of get().tabs) {
-        loadTabDataQuiet(tab.repoPath);
-      }
     },
 
     // Applies immediately to whatever's active, rather than waiting for the
@@ -489,13 +448,25 @@ export const useRepoStore = create<RepoState>((set, get) => {
     // up the active repo without needing to switch away and back.
     setFileWatchEnabled: (value: boolean) => {
       persistFileWatchEnabled(value);
-      const { activeRepoPath } = get();
-      if (!activeRepoPath) return;
-      if (value) {
-        watchRepo(activeRepoPath).catch(() => {});
+    },
+
+    // Exposed for useTabLifecycle hook to call when tab becomes active.
+    // If tab already has data (from a previous view), quietly refresh it
+    // in the background. Otherwise, do a full load with loading indicator.
+    loadTabDataFor: async (repoPath: string) => {
+      const tab = get().tabs.find((t) => t.repoPath === repoPath);
+      // If tab has no commits yet, do a full load with indicator
+      if (!tab || tab.commits.length === 0) {
+        await loadTabData(repoPath);
       } else {
-        unwatchRepo().catch(() => {});
+        // Tab has data from previous view: quietly update in background
+        await loadTabDataQuiet(repoPath);
       }
+    },
+
+    // Exposed for useTabLifecycle hook: refresh only working status
+    loadWorkingStatusFor: async (repoPath: string) => {
+      await loadWorkingStatus(repoPath);
     },
 
     // Only the tab that ends up active gets its data loaded eagerly here —
@@ -510,25 +481,15 @@ export const useRepoStore = create<RepoState>((set, get) => {
     restoreSession: async () => {
       const paths = loadSavedTabPaths();
       const savedActive = localStorage.getItem(ACTIVE_TAB_KEY);
+      const validPaths = [];
       for (const path of paths) {
         const valid = await isGitRepo(path).catch(() => false);
-        if (!valid) continue;
-        set((state) =>
-          state.tabs.some((t) => t.repoPath === path)
-            ? state
-            : { tabs: [...state.tabs, makeTab(path)] },
-        );
+        if (valid) validPaths.push(path);
       }
-      const { tabs } = get();
+      const tabs = validPaths.map(makeTab);
       const active =
-        (savedActive && tabs.some((t) => t.repoPath === savedActive) && savedActive) ||
-        tabs[0]?.repoPath ||
-        null;
-      set({ activeRepoPath: active });
-      if (active) {
-        await loadTabData(active);
-        if (getFileWatchEnabled()) watchRepo(active).catch(() => {});
-      }
+        (savedActive && validPaths.includes(savedActive) && savedActive) || tabs[0]?.repoPath || null;
+      set({ tabs, activeRepoPath: active });
     },
 
     openRepo: async (path: string) => {
@@ -536,7 +497,6 @@ export const useRepoStore = create<RepoState>((set, get) => {
       if (existing) {
         set({ activeRepoPath: path });
         saveSession(get().tabs, path);
-        activateRepo(path);
         return;
       }
       const tab = makeTab(path);
@@ -545,8 +505,6 @@ export const useRepoStore = create<RepoState>((set, get) => {
         saveSession(tabs, path);
         return { tabs, activeRepoPath: path };
       });
-      await loadTabData(path);
-      if (getFileWatchEnabled()) watchRepo(path).catch(() => {});
     },
 
     closeTab: (path: string) => {
@@ -555,7 +513,6 @@ export const useRepoStore = create<RepoState>((set, get) => {
         let activeRepoPath = state.activeRepoPath;
         if (activeRepoPath === path) {
           activeRepoPath = tabs[tabs.length - 1]?.repoPath ?? null;
-          activateRepo(activeRepoPath);
         }
         saveSession(tabs, activeRepoPath);
         return { tabs, activeRepoPath };
@@ -565,13 +522,10 @@ export const useRepoStore = create<RepoState>((set, get) => {
     setActiveTab: (path: string) => {
       set({ activeRepoPath: path });
       saveSession(get().tabs, path);
-      activateRepo(path);
     },
 
     refreshRepo: async () => {
-      const { activeRepoPath } = get();
-      if (!activeRepoPath) return;
-      await loadTabData(activeRepoPath);
+      // Refresh handled by useTabLifecycle hook on active tab
     },
 
     selectCommit: async (sha: string) => {

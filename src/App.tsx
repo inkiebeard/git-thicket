@@ -10,6 +10,7 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { Toolbar } from "./components/Toolbar";
 import { isMacOS } from "./lib/platform";
 import { useResizableWidths } from "./lib/useResizableWidths";
+import { useTabLifecycle } from "./lib/useTabLifecycle";
 import { useActiveTab, useRepoStore } from "./store/repoStore";
 import "./App.css";
 
@@ -17,6 +18,7 @@ const PERMISSIONS_MODAL_SEEN_KEY = "thicket:permissionsModalSeen";
 
 function App() {
   const activeTab = useActiveTab();
+  const activeRepoPath = useRepoStore((s) => s.activeRepoPath);
   const restoreSession = useRepoStore((s) => s.restoreSession);
   const clearSelection = useRepoStore((s) => s.clearSelection);
   const { widths, resize } = useResizableWidths([420], "thicket:paneWidths");
@@ -28,6 +30,9 @@ function App() {
   const hasSelection = !!activeTab?.selectedSha || !!activeTab?.viewingWorkingTree;
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [permissionsModalOpen, setPermissionsModalOpen] = useState(false);
+
+  // Manage lifecycle for active tab: load data, setup watcher, background polling
+  useTabLifecycle(activeRepoPath, !!activeRepoPath);
 
   useEffect(() => {
     restoreSession();
