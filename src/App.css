@@ -795,6 +795,66 @@ body {
   color: var(--danger);
 }
 
+.conflict-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--bg-1);
+}
+
+.conflict-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+}
+
+.conflict-file-item.unresolved {
+  background: rgba(255, 0, 0, 0.05);
+}
+
+.conflict-file-item.resolved {
+  background: rgba(0, 255, 0, 0.05);
+  opacity: 0.7;
+}
+
+.conflict-file-status {
+  font-size: 12px;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.conflict-file-name {
+  flex: 1;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-0);
+  cursor: pointer;
+  text-align: left;
+  border-radius: 4px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  transition: background-color 0.15s;
+}
+
+.conflict-file-name:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.conflict-file-name:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Context menu */
 
 .context-menu {
@@ -867,6 +927,11 @@ body {
 
 .commit-row.selected {
   background: var(--bg-3);
+}
+
+.commit-row.multi-selected {
+  background: rgba(0, 150, 255, 0.1);
+  border-left: 2px solid var(--accent);
 }
 
 .commit-graph-svg {

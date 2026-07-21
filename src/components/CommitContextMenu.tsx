@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { CommitInfo, RefInfo, ResetMode } from "../api/git";
-import { useRepoStore } from "../store/repoStore";
+import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { PromptDialog } from "./PromptDialog";
@@ -29,18 +29,24 @@ export function CommitContextMenu({
   const doCherryPick = useRepoStore((s) => s.doCherryPick);
   const doRevertCommit = useRepoStore((s) => s.doRevertCommit);
   const doResetToCommit = useRepoStore((s) => s.doResetToCommit);
+  const doRebaseBranch = useRepoStore((s) => s.doRebaseBranch);
+
+  const activeTab = useActiveTab();
+  const currentBranch = activeTab?.branch;
 
   const [promptMode, setPromptMode] = useState<"branch" | "tag" | null>(null);
   const [resetMode, setResetMode] = useState<ResetMode | null>(null);
   const [deleteBranchName, setDeleteBranchName] = useState<string | null>(null);
   const [renameBranchName, setRenameBranchName] = useState<string | null>(null);
+  const [confirmRebaseToCommit, setConfirmRebaseToCommit] = useState(false);
 
   const sha = commit.hash;
   const dialogOpen =
     promptMode !== null ||
     resetMode !== null ||
     deleteBranchName !== null ||
-    renameBranchName !== null;
+    renameBranchName !== null ||
+    confirmRebaseToCommit;
 
   async function copy(text: string) {
     await navigator.clipboard.writeText(text);
@@ -61,6 +67,11 @@ export function CommitContextMenu({
       onSelect: () => { doCherryPick(sha); onClose(); },
     },
     { label: "Revert commit", onSelect: () => { doRevertCommit(sha); onClose(); } },
+    {
+      label: `Rebase current branch onto ${sha.slice(0, 7)}`,
+      disabled: !currentBranch,
+      onSelect: () => setConfirmRebaseToCommit(true),
+    },
     { label: "Reset current branch → Soft", onSelect: () => setResetMode("soft") },
     { label: "Reset current branch → Mixed", onSelect: () => setResetMode("mixed") },
     { label: "Reset current branch → Hard", onSelect: () => setResetMode("hard"), danger: true },
@@ -149,6 +160,18 @@ export function CommitContextMenu({
           onCancel={onClose}
           onConfirm={(newName) => {
             doRenameBranch(renameBranchName, newName);
+            onClose();
+          }}
+        />
+      )}
+      {confirmRebaseToCommit && (
+        <ConfirmDialog
+          title="Rebase current branch"
+          message={`Rebase ${currentBranch} onto ${sha.slice(0, 7)}?`}
+          confirmLabel="Rebase"
+          onCancel={onClose}
+          onConfirm={() => {
+            doRebaseBranch(sha);
             onClose();
           }}
         />

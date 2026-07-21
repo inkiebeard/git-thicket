@@ -59,6 +59,8 @@ pub fn run() {
             git::reset_to_commit,
             git::fast_forward_branch,
             git::rebase_branch,
+            git::rebase_continue,
+            git::rebase_abort,
             git::git_status,
             git::stage_path,
             git::unstage_path,
@@ -70,6 +72,8 @@ pub fn run() {
             git::unstage_all,
             git::commit,
             git::get_working_file_diff,
+            git::stream_working_file_diff,
+            git::create_pull_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

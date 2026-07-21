@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getFileDiff, getWorkingFileDiff } from "../api/git";
+import { getFileDiff, streamWorkingFileDiff } from "../api/git";
 import {
   parseDiff,
   toSplitRows,
@@ -95,26 +95,41 @@ export function DiffViewer() {
     setError(null);
     setCollapsed(new Set());
 
-    const diffPromise = viewingWorkingTree
-      ? getWorkingFileDiff(
-          repoPath,
-          selectedFilePath,
-          selectedFileStaged,
-          !selectedFileStaged &&
-            workingStatus.find((f) => f.path === selectedFilePath)?.worktreeStatus ===
-              "untracked",
-        )
-      : getFileDiff(repoPath, selectedSha as string, selectedFilePath);
+    if (viewingWorkingTree) {
+      // Stream large working tree diffs to avoid buffering entire content
+      const isUntracked =
+        !selectedFileStaged &&
+        workingStatus.find((f) => f.path === selectedFilePath)?.worktreeStatus === "untracked";
 
-    diffPromise
-      .then((raw) => {
+      let diffBuffer = "";
+      streamWorkingFileDiff(repoPath, selectedFilePath, selectedFileStaged, isUntracked, (chunk) => {
         if (cancelled) return;
-        const parsed = parseDiff(raw);
-        setHunks(parsed.hunks);
-        setIsBinary(parsed.isBinary);
-      })
-      .catch((e) => !cancelled && setError(String(e)))
-      .finally(() => !cancelled && setLoading(false));
+        diffBuffer += chunk.chunk;
+        if (chunk.is_final) {
+          const parsed = parseDiff(diffBuffer);
+          setHunks(parsed.hunks);
+          setIsBinary(parsed.isBinary);
+          setLoading(false);
+        }
+      }).catch((e) => {
+        if (!cancelled) {
+          setError(String(e));
+          setLoading(false);
+        }
+      });
+    } else {
+      // Committed diffs are usually smaller, keep synchronous
+      getFileDiff(repoPath, selectedSha as string, selectedFilePath)
+        .then((raw) => {
+          if (cancelled) return;
+          const parsed = parseDiff(raw);
+          setHunks(parsed.hunks);
+          setIsBinary(parsed.isBinary);
+        })
+        .catch((e) => !cancelled && setError(String(e)))
+        .finally(() => !cancelled && setLoading(false));
+    }
+
     return () => {
       cancelled = true;
     };

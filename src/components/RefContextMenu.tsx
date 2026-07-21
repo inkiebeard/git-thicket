@@ -5,6 +5,7 @@ import { otherWorktreeBranches } from "../lib/worktrees";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
+import { CreatePullRequestDialog } from "./CreatePullRequestDialog";
 import { PromptDialog } from "./PromptDialog";
 
 interface RefContextMenuProps {
@@ -27,8 +28,11 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const doPushTag = useRepoStore((s) => s.doPushTag);
   const doDeleteTag = useRepoStore((s) => s.doDeleteTag);
   const doDeleteRemoteTag = useRepoStore((s) => s.doDeleteRemoteTag);
+  const doRebaseBranch = useRepoStore((s) => s.doRebaseBranch);
+  const doCreatePullRequest = useRepoStore((s) => s.doCreatePullRequest);
 
   const activeTab = useActiveTab();
+  const currentBranch = activeTab?.branch;
   const workingStatus = activeTab?.workingStatus ?? [];
   const hasUncommittedChanges = workingStatus.some(
     (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
@@ -44,9 +48,11 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteRemote, setConfirmDeleteRemote] = useState(false);
   const [confirmCheckout, setConfirmCheckout] = useState(false);
+  const [confirmRebaseToRef, setConfirmRebaseToRef] = useState(false);
+  const [showCreatePR, setShowCreatePR] = useState(false);
 
   const dialogOpen =
-    promptKind !== null || confirmDelete || confirmDeleteRemote || confirmCheckout;
+    promptKind !== null || confirmDelete || confirmDeleteRemote || confirmCheckout || confirmRebaseToRef || showCreatePR;
   const firstRemote = remotes[0] ?? null;
 
   // `git checkout` only refuses when a changed file's content would actually
@@ -77,12 +83,22 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
         onSelect: checkout,
       });
     }
+    items.push({ label: "Copy ref name", onSelect: () => { copy(target.name); onClose(); } });
     items.push({ label: "Rename…", onSelect: () => setPromptKind("rename") });
     items.push({ label: "Set upstream…", onSelect: () => setPromptKind("set-upstream") });
     if (target.kind === "head" && firstRemote) {
       items.push({ label: "Push", onSelect: () => { doPush(null); onClose(); } });
     }
+    items.push({
+      label: `Rebase current branch onto ${target.name}`,
+      disabled: !currentBranch,
+      onSelect: () => setConfirmRebaseToRef(true),
+    });
     if (target.kind === "branch") {
+      items.push({
+        label: "Create pull request…",
+        onSelect: () => setShowCreatePR(true),
+      });
       items.push({
         label: worktreePath ? "Delete (checked out in another worktree)" : "Delete",
         danger: true,
@@ -95,6 +111,17 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
       label: "Checkout (create local branch)",
       onSelect: checkout,
     });
+    const { branch } = splitRemoteRef(target.name);
+    items.push({ label: "Copy ref name", onSelect: () => { copy(branch); onClose(); } });
+    items.push({
+      label: `Rebase current branch onto ${target.name}`,
+      disabled: !currentBranch,
+      onSelect: () => setConfirmRebaseToRef(true),
+    });
+    items.push({
+      label: "Create pull request…",
+      onSelect: () => setShowCreatePR(true),
+    });
     items.push({
       label: "Delete on remote",
       danger: true,
@@ -102,6 +129,11 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
     });
   } else if (target.kind === "tag") {
     items.push({ label: "Copy tag name", onSelect: () => { copy(target.name); onClose(); } });
+    items.push({
+      label: `Rebase current branch onto ${target.name}`,
+      disabled: !currentBranch,
+      onSelect: () => setConfirmRebaseToRef(true),
+    });
     if (firstRemote) {
       items.push({
         label: `Push tag to ${firstRemote}`,
@@ -214,6 +246,37 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
           onCancel={onClose}
           onConfirm={() => {
             doDeleteRemoteTag(firstRemote, target.name);
+            onClose();
+          }}
+        />
+      )}
+      {confirmRebaseToRef && (
+        <ConfirmDialog
+          title="Rebase current branch"
+          message={`Rebase ${currentBranch} onto ${target.name}?`}
+          confirmLabel="Rebase"
+          onCancel={onClose}
+          onConfirm={() => {
+            doRebaseBranch(target.name);
+            onClose();
+          }}
+        />
+      )}
+      {showCreatePR && (target.kind === "branch" || target.kind === "remote-branch") && currentBranch && (
+        <CreatePullRequestDialog
+          currentBranch={currentBranch}
+          targetBranch={
+            target.kind === "remote-branch"
+              ? splitRemoteRef(target.name).branch
+              : target.name
+          }
+          onCancel={() => setShowCreatePR(false)}
+          onConfirm={(title, description, draft) => {
+            const targetBranch = target.kind === "remote-branch"
+              ? splitRemoteRef(target.name).branch
+              : target.name;
+            doCreatePullRequest(currentBranch, targetBranch, title, description, draft);
+            setShowCreatePR(false);
             onClose();
           }}
         />
