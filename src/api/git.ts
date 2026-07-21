@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export interface CommitInfo {
   hash: string;
@@ -494,6 +495,59 @@ export async function getWorkingFileDiff(
   untracked: boolean,
 ): Promise<string> {
   return invoke<string>("get_working_file_diff", { repoPath, path, staged, untracked });
+}
+
+export interface DiffChunk {
+  chunk: string;
+  sequence: number;
+  is_final: boolean;
+}
+
+/** Streams a large working file diff via Tauri events. Accumulates chunks
+ * as they arrive and calls `onChunk` for each one. Use this for files
+ * large enough that buffering causes memory issues. */
+export async function streamWorkingFileDiff(
+  repoPath: string,
+  path: string,
+  staged: boolean,
+  untracked: boolean,
+  onChunk: (chunk: DiffChunk) => void,
+): Promise<void> {
+  // Event name must only contain alphanumeric, '-', '/', ':', '_'
+  const eventName = `diff-stream_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+  const appWindow = getCurrentWindow();
+
+  return new Promise((resolve, reject) => {
+    let unlisten: (() => void) | null = null;
+
+    appWindow
+      .listen<DiffChunk>(eventName, (event) => {
+        onChunk(event.payload);
+        // When we receive the final chunk, clean up and resolve
+        if (event.payload.is_final) {
+          if (unlisten) unlisten();
+          resolve();
+        }
+      })
+      .then((unlistenFn) => {
+        unlisten = unlistenFn;
+        // Now invoke the command after listener is set up
+        invoke<void>("stream_working_file_diff", {
+          repoPath,
+          path,
+          staged,
+          untracked,
+          eventName,
+        }).catch((e) => {
+          if (unlisten) unlisten();
+          reject(e);
+        });
+      })
+      .catch((e) => {
+        if (unlisten) unlisten();
+        reject(e);
+      });
+  });
 }
 
 export async function createPullRequest(
