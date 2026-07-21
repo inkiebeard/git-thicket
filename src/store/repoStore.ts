@@ -1186,38 +1186,14 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath || shas.length < 2) return;
 
-      // For squashing: need to do interactive rebase
-      // shas are in commit graph order (newest first usually)
-      // We rebase onto the parent of the oldest commit
-      const oldestSha = shas[shas.length - 1];
-
-      // Get the parent of the oldest commit
-      const parentRef = `${oldestSha}^`;
-
-      // Interactive rebase with squash script
-      // For now, we'll use a simple approach: rebase and let the user know to use rebase --interactive
-      // This is complex and might need a separate interactive rebase UI
-
-      const success = await runAction(activeRepoPath, "Rebase", () =>
-        rebaseBranch(activeRepoPath, parentRef),
+      // Squashing commits via interactive rebase requires writing a rebase script
+      // and managing an interactive rebase session. This is a complex flow that
+      // would benefit from dedicated UI (like VS Code's rebase editor).
+      // For now, inform the user to use git rebase -i directly.
+      console.warn(
+        "Squash requires interactive rebase. Run 'git rebase -i' in terminal " +
+          `to squash commits ${shas.map((s) => s.substring(0, 7)).join(", ")}`,
       );
-
-      if (success) {
-        const tab = get().tabs.find((t) => t.repoPath === activeRepoPath);
-        const conflicts = tab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
-
-        if (conflicts.length > 0) {
-          updateTab(activeRepoPath, {
-            mergeConflictInProgress: {
-              operation: "rebase",
-              operationLabel: `rebase for squash`,
-            },
-          });
-        }
-      }
-
-      // Clear selection
-      get().clearCommitsSelection();
     },
 
     doCreatePullRequest: async (currentBranch: string, targetBranch: string, title: string, description: string, draft: boolean) => {
