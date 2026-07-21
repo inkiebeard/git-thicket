@@ -825,8 +825,9 @@ pub async fn push(
 
         let needs_upstream = match upstream_check {
             Ok(upstream) => {
-                // Check if upstream matches current branch (e.g., "refs/remotes/origin/luxinabox")
-                !upstream.contains(&format!("origin/{}", current_branch))
+                // Check if upstream is set and matches format "remote/branch"
+                // e.g., "origin/main", "upstream/feature", etc.
+                !upstream.contains('/') || !upstream.ends_with(&format!("/{}", current_branch))
             },
             Err(err) => {
                 eprintln!("[push] upstream check failed: {}", err);
@@ -839,7 +840,8 @@ pub async fn push(
             let remote_name = match remotes_result {
                 Ok(output) => output
                     .lines()
-                    .next()
+                    .find(|line| line.trim() == "origin")  // Prefer origin, fall back to first
+                    .or_else(|| output.lines().next())
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
                     .ok_or_else(|| "No remote configured".to_string())?
@@ -1331,7 +1333,7 @@ pub async fn stream_working_file_diff(
             git_command(&repo_path, &["diff", "--", &path])
         };
 
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::null()); // Null stderr to avoid deadlock
         let mut child = cmd.spawn().map_err(|e| format!("failed to spawn git: {e}"))?;
         let mut stdout = child.stdout.take().ok_or("failed to open stdout")?;
 
@@ -1442,14 +1444,23 @@ pub async fn create_pull_request(
     draft: bool,
 ) -> Result<String, String> {
     run_blocking(move || {
-        // Check if the branch exists on the remote by trying to resolve origin/<branch>
-        let remote_branch_check = run_git(&repo_path, &["rev-parse", &format!("origin/{}", current_branch)]);
+        // Find the primary remote (prefer origin, fall back to first)
+        let remotes_output = run_git(&repo_path, &["remote"])?;
+        let primary_remote = remotes_output
+            .lines()
+            .find(|line| line.trim() == "origin")
+            .or_else(|| remotes_output.lines().next())
+            .map(str::trim)
+            .ok_or_else(|| "No remote configured".to_string())?;
+
+        // Check if the branch exists on the remote
+        let remote_branch_check = run_git(&repo_path, &["rev-parse", &format!("{}/{}", primary_remote, current_branch)]);
 
         let needs_push = remote_branch_check.is_err();
 
         // Push the branch if it doesn't exist on remote yet
         if needs_push {
-            run_git(&repo_path, &["push", "origin", &current_branch])?;
+            run_git(&repo_path, &["push", "--set-upstream", primary_remote, &current_branch])?;
         }
 
         // Create the PR using GitHub CLI

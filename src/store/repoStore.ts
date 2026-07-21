@@ -751,16 +751,19 @@ export const useRepoStore = create<RepoState>((set, get) => {
         );
 
         let stashed = false;
+        let popIndex = index ?? 0;
 
         try {
           // Stash changes if they exist to avoid conflicts during pop
           if (hasUncommittedChanges) {
             await stashPush(activeRepoPath, "thicket-stashpop-auto");
             stashed = true;
+            // Auto-stash becomes stash@{0}, so target stash shifts up by 1
+            popIndex = (index ?? 0) + 1;
           }
 
-          // Pop the requested stash
-          const popResult = await stashPop(activeRepoPath, index);
+          // Pop the requested stash (accounting for index shift if auto-stashed)
+          const popResult = await stashPop(activeRepoPath, popIndex);
 
           // Try to unstash the changes we saved
           if (stashed) {
@@ -788,22 +791,23 @@ export const useRepoStore = create<RepoState>((set, get) => {
       });
 
       if (success) {
-        // Check if there are conflicts after pop
-        const updatedTab = tabs.find((t) => t.repoPath === activeRepoPath);
-        const conflicts = updatedTab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
+        // Check if there are conflicts after pop (use fresh tab state, not pre-action snapshot)
+        const currentTab = get().tabs.find((t) => t.repoPath === activeRepoPath);
+        const conflicts = currentTab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
 
         if (conflicts.length > 0) {
           // Find the stash that was popped to get its message for display
-          const stashIndex = index ?? 0;
-          const stashEntry = updatedTab?.stashes.find((s) => s.index === stashIndex);
-          const stashMessage = stashEntry?.message ?? `stash@{${stashIndex}}`;
+          // Use the original index the user selected (accounting for shift if auto-stashed)
+          const originalIndex = index ?? 0;
+          const stashEntry = currentTab?.stashes.find((s) => s.index === originalIndex);
+          const stashMessage = stashEntry?.message ?? `stash@{${originalIndex}}`;
 
           // Set merge conflict in progress so the UI can show conflict dialog
           updateTab(activeRepoPath, {
             mergeConflictInProgress: {
               operation: "stash-pop",
               operationLabel: `stash pop: ${stashMessage}`,
-              stashIndex,
+              stashIndex: originalIndex,
             },
           });
         }

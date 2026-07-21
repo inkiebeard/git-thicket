@@ -111,7 +111,12 @@ export function DiffViewer() {
           setIsBinary(parsed.isBinary);
           setLoading(false);
         }
-      }).catch((e) => !cancelled && setError(String(e)));
+      }).catch((e) => {
+        if (!cancelled) {
+          setError(String(e));
+          setLoading(false);
+        }
+      });
     } else {
       // Committed diffs are usually smaller, keep synchronous
       getFileDiff(repoPath, selectedSha as string, selectedFilePath)
