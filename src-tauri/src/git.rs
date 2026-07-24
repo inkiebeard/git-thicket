@@ -103,8 +103,8 @@ pub struct DiffChunk {
 // Commands that touch the network (fetch/pull/push/ls-remote) get a longer
 // budget than local-only ones (log/status/etc), since a slow-but-alive
 // connection shouldn't be killed as aggressively as a truly hung process.
-const LOCAL_TIMEOUT: Duration = Duration::from_secs(30);
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(60);
+const LOCAL_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn git_command(repo_path: &str, args: &[&str]) -> Command {
     let mut cmd = Command::new("git");
@@ -149,17 +149,40 @@ fn git_command(repo_path: &str, args: &[&str]) -> Command {
 // load once `loadingCommits` is stuck true — see activateRepo in the
 // frontend), and the poll loop backing every open tab piles up one hung
 // subprocess per tick on top.
+//
+// IMPORTANT: stdout and stderr must be drained on background threads while
+// polling. A pipe buffer is typically 64 KB; if the child writes more than
+// that before we read it, it blocks waiting for the reader — and since we're
+// only calling try_wait() (not reading), the process never exits, causing a
+// spurious timeout. This is especially likely for `git log -n500`.
 fn run_git_with_timeout(repo_path: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+    use std::io::Read;
+
     let mut child = git_command(repo_path, args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("failed to run git: {e}"))?;
 
+    // Drain stdout/stderr on background threads so the pipe buffer never
+    // fills and blocks the child process from exiting.
+    let mut stdout_pipe = child.stdout.take().expect("stdout was piped");
+    let mut stderr_pipe = child.stderr.take().expect("stderr was piped");
+    let stdout_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr_pipe.read_to_end(&mut buf);
+        buf
+    });
+
     let deadline = Instant::now() + timeout;
-    loop {
+    let exit_status = loop {
         match child.try_wait() {
-            Ok(Some(_status)) => break,
+            Ok(Some(status)) => break status,
             Ok(None) => {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
@@ -174,25 +197,38 @@ fn run_git_with_timeout(repo_path: &str, args: &[&str], timeout: Duration) -> Re
             }
             Err(e) => return Err(format!("failed to wait for git: {e}")),
         }
+    };
+
+    let stdout = stdout_thread.join().unwrap_or_default();
+    let stderr = stderr_thread.join().unwrap_or_default();
+
+    if !exit_status.success() {
+        return Err(String::from_utf8_lossy(&stderr).to_string());
     }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("failed to collect git output: {e}"))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(String::from_utf8_lossy(&stdout).to_string())
 }
 
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
-    let timeout = match args.first() {
-        Some(&"fetch") | Some(&"pull") | Some(&"push") | Some(&"ls-remote") => NETWORK_TIMEOUT,
-        _ => LOCAL_TIMEOUT,
-    };
-    run_git_with_timeout(repo_path, args, timeout)
+    match args.first() {
+        Some(&"fetch") | Some(&"pull") | Some(&"push") | Some(&"ls-remote") => {
+            // Network commands need a timeout — a stalled connection never
+            // returns an error, it just hangs indefinitely.
+            run_git_with_timeout(repo_path, args, NETWORK_TIMEOUT)
+        }
+        _ => {
+            // Local-only commands: use blocking output() which reads stdout
+            // and stderr concurrently, correctly handling output of any size
+            // without deadlocking the pipe buffer.
+            let output = git_command(repo_path, args)
+                .output()
+                .map_err(|e| format!("failed to run git: {e}"))?;
+            if !output.status.success() {
+                return Err(String::from_utf8_lossy(&output.stderr).to_string());
+            }
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        }
+    }
 }
 
 // Every command below hands its actual work to this, via
@@ -304,17 +340,17 @@ fn get_commit_stats(
     include_remotes: bool,
     limit: u32,
     skip: u32,
+    detached_heads: &[String],
 ) -> Result<HashMap<String, (u32, u32)>, String> {
     let limit_arg = format!("-n{limit}");
     let skip_arg = format!("--skip={skip}");
-    let detached_heads = detached_worktree_heads(repo_path);
     let mut args = vec!["log", "--branches"];
     if include_remotes {
         args.push("--remotes");
     }
     args.push("--tags");
     args.push("HEAD");
-    for h in &detached_heads {
+    for h in detached_heads {
         args.push(h.as_str());
     }
     args.extend([
@@ -362,7 +398,8 @@ pub async fn list_commits(
         // %(trailers:...) placeholder, not a full body fetch — cheap to include
         // per-commit since it's usually empty, unlike pulling %b for everyone.
         let format = format!(
-            "%H{RS}%P{RS}%an{RS}%ad{RS}%s{RS}%(trailers:key=Co-authored-by,valueonly,separator=%x1d){RE}"
+            "%H{0}%P{0}%an{0}%ad{0}%s{0}%(trailers:key=Co-authored-by,valueonly,separator=%x1d){1}",
+            RS, RE
         );
         let limit_arg = format!("-n{limit}");
         let skip_arg = format!("--skip={skip}");
@@ -386,7 +423,7 @@ pub async fn list_commits(
         ]);
         let output = run_git(&repo_path, &args)?;
 
-        let stats = get_commit_stats(&repo_path, include_remotes, limit, skip)
+        let stats = get_commit_stats(&repo_path, include_remotes, limit, skip, &detached_heads)
             .unwrap_or_else(|err| {
                 eprintln!("[list_commits] stats failed: {}", err);
                 Default::default()
