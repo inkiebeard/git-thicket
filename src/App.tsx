@@ -8,6 +8,7 @@ import { ResizeHandle } from "./components/ResizeHandle";
 import { Tabs } from "./components/Tabs";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { Toolbar } from "./components/Toolbar";
+import { ToastContainer } from "./components/ToastContainer";
 import { isMacOS } from "./lib/platform";
 import { useResizableWidths } from "./lib/useResizableWidths";
 import { useTabLifecycle } from "./lib/useTabLifecycle";
@@ -21,6 +22,7 @@ function App() {
   const activeRepoPath = useRepoStore((s) => s.activeRepoPath);
   const restoreSession = useRepoStore((s) => s.restoreSession);
   const clearSelection = useRepoStore((s) => s.clearSelection);
+  const dismissToast = useRepoStore((s) => s.dismissToast);
   const { widths, resize } = useResizableWidths([420], "thicket:paneWidths");
   const { widths: terminalHeights, resize: resizeTerminal } = useResizableWidths(
     [320],
@@ -55,10 +57,10 @@ function App() {
             terminalOpen={terminalOpen}
             onToggleTerminal={() => setTerminalOpen((o) => !o)}
           />
-          {activeTab.error && <div className="app-error">{activeTab.error}</div>}
         </header>
       )}
       <Tabs />
+      {activeTab && <ToastContainer toasts={activeTab.toasts} onDismiss={dismissToast} />}
       {activeTab ? (
         <main className="app-body">
           <section

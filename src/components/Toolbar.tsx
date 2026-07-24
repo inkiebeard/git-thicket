@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { stashShow, type StashEntry } from "../api/git";
 import { isMacOS } from "../lib/platform";
 import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { BranchManager } from "./BranchManager";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { ErrorDetailModal } from "./ErrorDetailModal";
 import { FetchIcon, HamburgerIcon, PullIcon, PushIcon, StashIcon } from "./icons";
 import { PermissionsModal } from "./PermissionsModal";
 import { RemotesDialog } from "./RemotesDialog";
@@ -318,11 +317,8 @@ export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
   const workingStatus = activeTab?.workingStatus ?? [];
   const aheadBehind = activeTab?.aheadBehind ?? null;
   const busy = activeTab?.busy ?? false;
-  const toast = activeTab?.toast ?? null;
   const doFetch = useRepoStore((s) => s.doFetch);
   const doPull = useRepoStore((s) => s.doPull);
-  const dismissToast = useRepoStore((s) => s.dismissToast);
-  const [errorModalOpen, setErrorModalOpen] = useState(false);
 
   const headRef = refs.find((r) => r.kind === "head");
   const upstream = headRef?.upstream ?? null;
@@ -336,13 +332,6 @@ export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
   const hasChanges = workingStatus.some(
     (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
   );
-
-  useEffect(() => {
-    // Errors stay until dismissed or inspected — only successes auto-clear.
-    if (!toast || toast.kind === "error") return;
-    const t = setTimeout(dismissToast, 4000);
-    return () => clearTimeout(t);
-  }, [toast, dismissToast]);
 
   return (
     <div className="toolbar">
@@ -376,39 +365,6 @@ export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
       </div>
       <div className="toolbar-actions">
         {busy && <span className="toolbar-busy">Working…</span>}
-        {toast && (
-          <span
-            className={`toolbar-toast toolbar-toast-${toast.kind}`}
-            onClick={() => {
-              if (toast.kind === "error") setErrorModalOpen(true);
-              else dismissToast();
-            }}
-            title={toast.kind === "error" ? "Click for details" : undefined}
-          >
-            <span className="toolbar-toast-text">{toast.text}</span>
-            {toast.kind === "error" && (
-              <span
-                className="toolbar-toast-dismiss"
-                title="Dismiss"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  dismissToast();
-                }}
-              >
-                ×
-              </span>
-            )}
-          </span>
-        )}
-        {errorModalOpen && toast?.kind === "error" && (
-          <ErrorDetailModal
-            toast={toast}
-            onClose={() => {
-              setErrorModalOpen(false);
-              dismissToast();
-            }}
-          />
-        )}
         <button
           className="btn-toolbar"
           disabled={busy || !hasRemote}

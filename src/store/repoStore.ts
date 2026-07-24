@@ -86,6 +86,9 @@ export interface RepoTab {
   worktrees: WorktreeInfo[];
   stashes: StashEntry[];
   loadingCommits: boolean;
+  loadingMoreCommits: boolean;  // When fetching next page
+  commitsPageSize: number;  // Commits per page for lazy loading
+  hasMoreCommits: boolean;  // Whether there are older commits to fetch
   error: string | null;
 
   selectedSha: string | null;
@@ -112,7 +115,7 @@ export interface RepoTab {
   };
 
   busy: boolean;
-  toast: Toast | null;
+  toasts: Toast[];
 }
 
 function makeTab(repoPath: string): RepoTab {
@@ -126,6 +129,9 @@ function makeTab(repoPath: string): RepoTab {
     worktrees: [],
     stashes: [],
     loadingCommits: true,
+    loadingMoreCommits: false,
+    commitsPageSize: 200,  // Load 200 commits at a time
+    hasMoreCommits: true,  // Assume there are more until we know otherwise
     error: null,
     selectedSha: null,
     selectedShas: [],
@@ -141,7 +147,7 @@ function makeTab(repoPath: string): RepoTab {
     commitMessage: "",
     amend: false,
     busy: false,
-    toast: null,
+    toasts: [],
   };
 }
 
@@ -159,13 +165,15 @@ interface RepoState {
   closeTab: (path: string) => void;
   setActiveTab: (path: string) => void;
   refreshRepo: () => Promise<void>;
+  doLoadMoreCommits: () => Promise<void>;  // Load next page of commits for lazy scrolling
   selectCommit: (sha: string) => Promise<void>;
   addCommitToSelection: (sha: string) => void;
   toggleCommitSelection: (sha: string) => void;
   clearCommitsSelection: () => void;
   selectFile: (path: string) => void;
   clearSelection: () => void;
-  dismissToast: () => void;
+  dismissToast: (toastId: number) => void;
+  addToast: (kind: Toast['kind'], action: string, text: string) => void;
 
   selectWorkingTree: () => void;
   selectWorkingFile: (path: string, staged: boolean) => void;
@@ -264,7 +272,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
       if (quiet) return;
       updateTab(repoPath, {
         loadingStatus: false,
-        toast: { id: toastId++, kind: "error", text: String(e), action: "Load status" },
+        toasts: [{ id: toastId++, kind: "error", text: String(e), action: "Load status" }],
       });
     }
   }
@@ -401,14 +409,14 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const output = await action();
       updateTab(repoPath, {
         busy: false,
-        toast: { id: toastId++, kind: "success", text: output.trim() || "Done", action: label },
+        toasts: [{ id: toastId++, kind: "success", text: output.trim() || "Done", action: label }],
       });
       await loadTabData(repoPath);
       return true;
     } catch (e) {
       updateTab(repoPath, {
         busy: false,
-        toast: { id: toastId++, kind: "error", text: String(e), action: label },
+        toasts: [{ id: toastId++, kind: "error", text: String(e), action: label }],
       });
       return false;
     }
@@ -423,7 +431,7 @@ export const useRepoStore = create<RepoState>((set, get) => {
       await loadWorkingStatus(repoPath);
     } catch (e) {
       updateTab(repoPath, {
-        toast: { id: toastId++, kind: "error", text: String(e), action: label },
+        toasts: [{ id: toastId++, kind: "error", text: String(e), action: label }],
       });
     }
   }
@@ -528,6 +536,41 @@ export const useRepoStore = create<RepoState>((set, get) => {
       // Refresh handled by useTabLifecycle hook on active tab
     },
 
+    doLoadMoreCommits: async () => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+      
+      const tab = tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!tab || !tab.hasMoreCommits || tab.loadingMoreCommits) return;
+      
+      updateTab(activeRepoPath, { loadingMoreCommits: true });
+      try {
+        // Load the next page: skip by the number of commits already loaded
+        const skip = tab.commits.length;
+        const moreCommits = await listCommits(activeRepoPath, get().showRemoteBranches, tab.commitsPageSize, skip);
+        
+        if (moreCommits.length < tab.commitsPageSize) {
+          // Fewer commits than requested = we've reached the end
+          updateTab(activeRepoPath, {
+            commits: [...tab.commits, ...moreCommits],
+            hasMoreCommits: false,
+            loadingMoreCommits: false,
+          });
+        } else {
+          // Full page loaded, there might be more
+          updateTab(activeRepoPath, {
+            commits: [...tab.commits, ...moreCommits],
+            loadingMoreCommits: false,
+          });
+        }
+      } catch (e) {
+        updateTab(activeRepoPath, {
+          loadingMoreCommits: false,
+          toasts: [{ id: toastId++, kind: "error", text: String(e), action: "Load more commits" }],
+        });
+      }
+    },
+
     selectCommit: async (sha: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
@@ -613,10 +656,35 @@ export const useRepoStore = create<RepoState>((set, get) => {
       });
     },
 
-    dismissToast: () => {
+    dismissToast: (toastId: number) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      updateTab(activeRepoPath, { toast: null });
+      const tab = get().tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!tab) return;
+      updateTab(activeRepoPath, { toasts: tab.toasts.filter((t) => t.id !== toastId) });
+    },
+
+    addToast: (kind: Toast['kind'], action: string, text: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      const tab = get().tabs.find((t) => t.repoPath === activeRepoPath);
+      if (!tab) return;
+      
+      const newToast: Toast = {
+        id: toastId++,
+        kind,
+        action,
+        text,
+      };
+      
+      updateTab(activeRepoPath, { toasts: [...tab.toasts, newToast] });
+      
+      // Auto-dismiss success toasts after 5 seconds
+      if (kind === "success") {
+        setTimeout(() => {
+          get().dismissToast(newToast.id);
+        }, 5000);
+      }
     },
 
     selectWorkingTree: () => {

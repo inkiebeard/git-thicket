@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { stashShow, type CommitInfo, type RefInfo, type StashEntry } from "../api/git";
 import { useColumnOrder } from "../lib/useColumnOrder";
 import { useColumnWidths } from "../lib/useColumnWidths";
@@ -440,6 +440,7 @@ export function CommitGraph() {
   const doStashDrop = useRepoStore((s) => s.doStashDrop);
   const doCompleteConflict = useRepoStore((s) => s.doCompleteConflict);
   const doAbortConflict = useRepoStore((s) => s.doAbortConflict);
+  const doLoadMoreCommits = useRepoStore((s) => s.doLoadMoreCommits);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [refMenu, setRefMenu] = useState<RefMenuState | null>(null);
   const [workingTreeMenu, setWorkingTreeMenu] = useState<{ x: number; y: number } | null>(null);
@@ -527,6 +528,23 @@ export function CommitGraph() {
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
   });
+
+  // Lazy load more commits when user scrolls near the bottom
+  useEffect(() => {
+    const container = parentRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      // When user scrolls within 500px of the bottom, load more
+      if (scrollHeight - scrollTop - clientHeight < 500) {
+        doLoadMoreCommits();
+      }
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [doLoadMoreCommits]);
 
   async function showStashDiff(s: StashEntry) {
     setStashMenu(null);
