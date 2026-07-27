@@ -212,9 +212,11 @@ function WorkingFileList() {
 
   return (
     <div className="file-list working-file-list">
-      <div className="file-list-section">
+      <div className="file-list-section file-list-section-staged">
         <div className="file-list-section-header">
-          <span>Staged ({staged.length})</span>
+          <span className="file-list-section-title">
+            Staged <span className="file-list-section-count">{staged.length}</span>
+          </span>
           {staged.length > 0 && (
             <button
               className="file-list-section-action"
@@ -250,9 +252,11 @@ function WorkingFileList() {
           )}
         </div>
       </div>
-      <div className="file-list-section">
+      <div className="file-list-section file-list-section-unstaged">
         <div className="file-list-section-header">
-          <span>Changes ({unstaged.length})</span>
+          <span className="file-list-section-title">
+            Unstaged <span className="file-list-section-count">{unstaged.length}</span>
+          </span>
           {unstaged.length > 0 && (
             <button
               className="file-list-section-action"

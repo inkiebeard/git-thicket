@@ -1278,7 +1278,11 @@ body {
 .file-list-section {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--bg-1);
 }
 
 .file-list-section-header {
@@ -1288,8 +1292,56 @@ body {
   font-size: 11px;
   text-transform: uppercase;
   color: var(--text-2);
-  padding: 0 8px;
+  padding: 0 6px;
   margin-bottom: 2px;
+}
+
+.file-list-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-list-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.file-list-section-staged {
+  border-color: rgba(95, 191, 122, 0.35);
+  background: linear-gradient(to bottom, rgba(95, 191, 122, 0.09), rgba(95, 191, 122, 0.03));
+}
+
+.file-list-section-staged .file-list-section-header {
+  color: #8cd7a2;
+}
+
+.file-list-section-staged .file-list-section-count {
+  background: rgba(95, 191, 122, 0.2);
+  color: #b8ebc9;
+}
+
+.file-list-section-unstaged {
+  border-color: rgba(229, 185, 95, 0.35);
+  background: linear-gradient(to bottom, rgba(229, 185, 95, 0.09), rgba(229, 185, 95, 0.03));
+}
+
+.file-list-section-unstaged .file-list-section-header {
+  color: #e8c67f;
+}
+
+.file-list-section-unstaged .file-list-section-count {
+  background: rgba(229, 185, 95, 0.2);
+  color: #f3dcae;
 }
 
 .file-list-section-action {
@@ -1445,6 +1497,104 @@ body {
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 11px;
   color: var(--text-2);
+}
+
+.commit-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.commit-detail-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  margin-right: 18px;
+}
+
+.commit-detail-edit-btn:hover {
+  background: var(--bg-2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.commit-message-editor-modal {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  min-width: 400px;
+  max-width: 600px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.commit-message-editor-modal h2 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: var(--text-0);
+}
+
+.commit-message-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 80px;
+  margin-bottom: 16px;
+}
+
+.commit-message-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.1);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.modal-actions button {
+  padding: 6px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-0);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.modal-actions button:hover {
+  background: var(--bg-3);
+}
+
+.modal-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.modal-actions button.primary:hover {
+  background: #4a7de6;
 }
 
 .file-status {

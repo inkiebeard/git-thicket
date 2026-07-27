@@ -1,5 +1,7 @@
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
+import { EditIcon } from "./icons";
+import { ModalOverlay } from "./ModalOverlay";
 
 const IS_MAC = navigator.platform.toLowerCase().includes("mac");
 const CO_AUTHOR_RE = /^co-authored-by:\s*(.+?)\s*<(.+?)>\s*$/i;
@@ -105,6 +107,11 @@ export function CommitDetail() {
   const detail = activeTab?.commitDetail ?? null;
   const loading = activeTab?.loadingDetail ?? false;
   const viewingWorkingTree = activeTab?.viewingWorkingTree ?? false;
+  const selectedSha = activeTab?.selectedSha ?? null;
+  const doAmendCommitMessage = useRepoStore((s) => s.doAmendCommitMessage);
+
+  const [editingMessage, setEditingMessage] = useState(false);
+  const [newMessage, setNewMessage] = useState("");
 
   const parsed = useMemo(
     () => (detail ? parseBody(detail.body) : null),
@@ -125,38 +132,81 @@ export function CommitDetail() {
     detail.committerName !== detail.authorName ||
     detail.committerEmail !== detail.authorEmail;
 
+  const handleEditClick = () => {
+    setNewMessage(detail.subject);
+    setEditingMessage(true);
+  };
+
+  const handleSaveMessage = async () => {
+    if (!selectedSha || !newMessage.trim()) return;
+    await doAmendCommitMessage(selectedSha, newMessage.trim());
+    setEditingMessage(false);
+    setNewMessage("");
+  };
+
   return (
-    <div className="commit-detail">
-      <div className="commit-detail-subject">{detail.subject}</div>
-      {parsed.text && <div className="commit-detail-body">{parsed.text}</div>}
-      <div className="commit-detail-people">
-        <div className="commit-detail-person">
-          <span className="commit-detail-label">Author</span>
-          <span className="commit-detail-name">{detail.authorName}</span>
-          <span className="commit-detail-email">{detail.authorEmail}</span>
-          <span className="commit-detail-date" title={detail.authorDate}>
-            {formatFullDate(detail.authorDate)}
-          </span>
+    <>
+      <div className="commit-detail">
+        <div className="commit-detail-header">
+          <div className="commit-detail-subject">{detail.subject}</div>
+          <button
+            className="commit-detail-edit-btn"
+            onClick={handleEditClick}
+            title="Edit commit message"
+          >
+            <EditIcon />
+          </button>
         </div>
-        {committerDiffers && (
+        {parsed.text && <div className="commit-detail-body">{parsed.text}</div>}
+        <div className="commit-detail-people">
           <div className="commit-detail-person">
-            <span className="commit-detail-label">Committer</span>
-            <span className="commit-detail-name">{detail.committerName}</span>
-            <span className="commit-detail-email">{detail.committerEmail}</span>
-            <span className="commit-detail-date" title={detail.committerDate}>
-              {formatFullDate(detail.committerDate)}
+            <span className="commit-detail-label">Author</span>
+            <span className="commit-detail-name">{detail.authorName}</span>
+            <span className="commit-detail-email">{detail.authorEmail}</span>
+            <span className="commit-detail-date" title={detail.authorDate}>
+              {formatFullDate(detail.authorDate)}
             </span>
           </div>
-        )}
-        {parsed.coAuthors.map((c) => (
-          <div className="commit-detail-person" key={c.email}>
-            <span className="commit-detail-label">Co-author</span>
-            <span className="commit-detail-name">{c.name}</span>
-            <span className="commit-detail-email">{c.email}</span>
-          </div>
-        ))}
+          {committerDiffers && (
+            <div className="commit-detail-person">
+              <span className="commit-detail-label">Committer</span>
+              <span className="commit-detail-name">{detail.committerName}</span>
+              <span className="commit-detail-email">{detail.committerEmail}</span>
+              <span className="commit-detail-date" title={detail.committerDate}>
+                {formatFullDate(detail.committerDate)}
+              </span>
+            </div>
+          )}
+          {parsed.coAuthors.map((c) => (
+            <div className="commit-detail-person" key={c.email}>
+              <span className="commit-detail-label">Co-author</span>
+              <span className="commit-detail-name">{c.name}</span>
+              <span className="commit-detail-email">{c.email}</span>
+            </div>
+          ))}
+        </div>
+        <div className="commit-detail-hash">{detail.hash}</div>
       </div>
-      <div className="commit-detail-hash">{detail.hash}</div>
-    </div>
+      {editingMessage && (
+        <ModalOverlay onClose={() => setEditingMessage(false)}>
+          <div className="commit-message-editor-modal">
+            <h2>Edit Commit Message</h2>
+            <textarea
+              className="commit-message-input"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Enter new commit message"
+              autoFocus
+            />
+            <div className="modal-actions">
+              <button onClick={() => setEditingMessage(false)}>Cancel</button>
+              <button onClick={handleSaveMessage} className="primary">
+                Save
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+    </>
   );
 }

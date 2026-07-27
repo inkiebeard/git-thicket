@@ -380,6 +380,14 @@ export async function revertCommit(repoPath: string, sha: string): Promise<strin
   return invoke<string>("revert_commit", { repoPath, sha });
 }
 
+export async function amendCommitMessage(
+  repoPath: string,
+  sha: string,
+  newMessage: string,
+): Promise<string> {
+  return invoke<string>("amend_commit_message", { repoPath, sha, newMessage });
+}
+
 export type ResetMode = "soft" | "mixed" | "hard";
 
 export async function resetToCommit(

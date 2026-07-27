@@ -56,6 +56,7 @@ pub fn run() {
             git::delete_remote_tag,
             git::cherry_pick,
             git::revert_commit,
+            git::amend_commit_message,
             git::reset_to_commit,
             git::fast_forward_branch,
             git::rebase_branch,

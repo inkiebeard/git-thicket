@@ -23,6 +23,7 @@ import {
   type WorktreeInfo,
   addRemote,
   aheadBehind as fetchAheadBehind,
+  amendCommitMessage,
   checkoutRef,
   cherryPick,
   commitChanges,
@@ -210,6 +211,7 @@ interface RepoState {
   doDeleteRemoteTag: (remote: string, name: string) => Promise<void>;
   doCherryPick: (sha: string) => Promise<void>;
   doRevertCommit: (sha: string) => Promise<void>;
+  doAmendCommitMessage: (sha: string, newMessage: string) => Promise<void>;
   doResetToCommit: (sha: string, mode: ResetMode) => Promise<void>;
   doFastForwardBranch: (targetRef: string) => Promise<void>;
   doRebaseBranch: (targetRef: string) => Promise<void>;
@@ -1050,6 +1052,12 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runAction(activeRepoPath, "Revert commit", () => revertCommit(activeRepoPath, sha));
+    },
+
+    doAmendCommitMessage: async (sha: string, newMessage: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Amend commit", () => amendCommitMessage(activeRepoPath, sha, newMessage));
     },
 
     doResetToCommit: async (sha: string, mode: ResetMode) => {

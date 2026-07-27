@@ -1083,6 +1083,31 @@ pub async fn revert_commit(repo_path: String, sha: String) -> Result<String, Str
     run_blocking(move || run_git(&repo_path, &["revert", "--no-edit", &sha])).await
 }
 
+/// Amends the commit message of a specific commit. Only works if the commit
+/// is HEAD (the current commit). For other commits, use rebase.
+#[tauri::command(async)]
+pub async fn amend_commit_message(repo_path: String, sha: String, new_message: String) -> Result<String, String> {
+    run_blocking(move || {
+        // Verify this is HEAD
+        let _head = run_git(&repo_path, &["rev-parse", "HEAD"])?
+            .trim()
+            .to_string();
+        let sha_short = run_git(&repo_path, &["rev-parse", "--short", &sha])?
+            .trim()
+            .to_string();
+        let head_short = run_git(&repo_path, &["rev-parse", "--short", "HEAD"])?
+            .trim()
+            .to_string();
+
+        if head_short != sha_short {
+            return Err("Cannot amend: only HEAD (current commit) can be amended. Use interactive rebase for other commits.".to_string());
+        }
+
+        run_git(&repo_path, &["commit", "--amend", "-m", &new_message])
+    })
+    .await
+}
+
 /// Fast-forwards the currently checked-out branch to `target_ref`. Fails
 /// (rather than falling back to a merge commit) if the current branch has
 /// diverged, since the whole point of offering this as a distinct choice

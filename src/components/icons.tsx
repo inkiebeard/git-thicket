@@ -62,3 +62,10 @@ export function HamburgerIcon({ className }: IconProps) {
     </svg>
   );
 }
+export function EditIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M11 2l2.5 2.5M3 12H2v-1l7.5-7.5a1 1 0 0 1 1.415 0l2.07 2.07a1 1 0 0 1 0 1.415L5.5 14H3" />
+    </svg>
+  );
+}
