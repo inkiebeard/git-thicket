@@ -1413,6 +1413,20 @@ body {
   cursor: pointer;
 }
 
+.commit-composer-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.commit-composer-identity-select {
+  max-width: 320px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
 .commit-composer-actions {
   display: flex;
   align-items: center;
@@ -1423,6 +1437,10 @@ body {
 .commit-composer-hint {
   font-size: 11px;
   color: var(--text-2);
+}
+
+.commit-composer-hint-identity {
+  margin-left: auto;
 }
 
 /* Commit detail */
@@ -1544,6 +1562,26 @@ body {
   margin: 0 0 12px 0;
   font-size: 16px;
   color: var(--text-0);
+}
+
+.commit-message-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.commit-message-identity .modal-input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.commit-message-identity-hint {
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: var(--text-2);
 }
 
 .commit-message-input {
@@ -2085,4 +2123,57 @@ body {
 .settings-number-input {
   width: 70px;
   text-align: right;
+}
+
+.settings-identity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.settings-identity-empty {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.settings-identity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-1);
+}
+
+.settings-identity-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.settings-identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-identity-name {
+  font-size: 13px;
+  color: var(--text-0);
+  font-weight: 600;
+}
+
+.settings-identity-email {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.settings-identity-add {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(160px, 1.2fr) auto;
+  gap: 8px;
 }

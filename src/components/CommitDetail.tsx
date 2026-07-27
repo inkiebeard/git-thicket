@@ -51,6 +51,11 @@ function CommitComposer() {
   const setCommitMessage = useRepoStore((s) => s.setCommitMessage);
   const setAmend = useRepoStore((s) => s.setAmend);
   const commitStagedChanges = useRepoStore((s) => s.commitStagedChanges);
+  const authorIdentities = useRepoStore((s) => s.authorIdentities);
+  const activeAuthorIdentityId = useRepoStore((s) => s.activeAuthorIdentityId);
+  const setActiveAuthorIdentity = useRepoStore((s) => s.setActiveAuthorIdentity);
+
+  const activeIdentity = authorIdentities.find((i) => i.id === activeAuthorIdentityId) ?? null;
 
   const stagedCount = workingStatus.filter((f) => f.indexStatus !== "none").length;
   // Amending doesn't require anything staged — a message-only amend is valid.
@@ -79,6 +84,21 @@ function CommitComposer() {
         />
         Amend previous commit
       </label>
+      <label className="commit-composer-identity">
+        <span>Author identity</span>
+        <select
+          className="modal-input commit-composer-identity-select"
+          value={activeAuthorIdentityId ?? ""}
+          onChange={(e) => setActiveAuthorIdentity(e.target.value || null)}
+        >
+          <option value="">Git config default</option>
+          {authorIdentities.map((identity) => (
+            <option key={identity.id} value={identity.id}>
+                {`${identity.name} <${identity.email}>`}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="commit-composer-actions">
         <span className="commit-composer-hint">
           {amend
@@ -88,6 +108,11 @@ function CommitComposer() {
             : stagedCount === 0
               ? "No files staged"
               : `${stagedCount} file${stagedCount === 1 ? "" : "s"} staged`}
+        </span>
+        <span className="commit-composer-hint commit-composer-hint-identity">
+          {activeIdentity
+            ? `Using ${activeIdentity.name} <${activeIdentity.email}>`
+            : "Using git config default identity"}
         </span>
         <button
           className="btn-primary"
@@ -109,6 +134,11 @@ export function CommitDetail() {
   const viewingWorkingTree = activeTab?.viewingWorkingTree ?? false;
   const selectedSha = activeTab?.selectedSha ?? null;
   const doAmendCommitMessage = useRepoStore((s) => s.doAmendCommitMessage);
+  const authorIdentities = useRepoStore((s) => s.authorIdentities);
+  const activeAuthorIdentityId = useRepoStore((s) => s.activeAuthorIdentityId);
+  const setActiveAuthorIdentity = useRepoStore((s) => s.setActiveAuthorIdentity);
+
+  const activeIdentity = authorIdentities.find((i) => i.id === activeAuthorIdentityId) ?? null;
 
   const [editingMessage, setEditingMessage] = useState(false);
   const [newMessage, setNewMessage] = useState("");
@@ -191,6 +221,26 @@ export function CommitDetail() {
         <ModalOverlay onClose={() => setEditingMessage(false)}>
           <div className="commit-message-editor-modal">
             <h2>Edit Commit Message</h2>
+            <label className="commit-message-identity">
+              <span>Author identity</span>
+              <select
+                className="modal-input"
+                value={activeAuthorIdentityId ?? ""}
+                onChange={(e) => setActiveAuthorIdentity(e.target.value || null)}
+              >
+                <option value="">Git config default</option>
+                {authorIdentities.map((identity) => (
+                  <option key={identity.id} value={identity.id}>
+                    {`${identity.name} <${identity.email}>`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="commit-message-identity-hint">
+              {activeIdentity
+                ? `Amend will use ${activeIdentity.name} <${activeIdentity.email}>`
+                : "Amend will use the repo git config identity"}
+            </div>
             <textarea
               className="commit-message-input"
               value={newMessage}

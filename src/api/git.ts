@@ -384,8 +384,15 @@ export async function amendCommitMessage(
   repoPath: string,
   sha: string,
   newMessage: string,
+  authorIdentity?: { name: string; email: string } | null,
 ): Promise<string> {
-  return invoke<string>("amend_commit_message", { repoPath, sha, newMessage });
+  return invoke<string>("amend_commit_message", {
+    repoPath,
+    sha,
+    newMessage,
+    authorName: authorIdentity?.name ?? null,
+    authorEmail: authorIdentity?.email ?? null,
+  });
 }
 
 export type ResetMode = "soft" | "mixed" | "hard";
@@ -480,8 +487,15 @@ export async function commitChanges(
   repoPath: string,
   message: string,
   amend = false,
+  authorIdentity?: { name: string; email: string } | null,
 ): Promise<string> {
-  return invoke<string>("commit", { repoPath, message, amend });
+  return invoke<string>("commit", {
+    repoPath,
+    message,
+    amend,
+    authorName: authorIdentity?.name ?? null,
+    authorEmail: authorIdentity?.email ?? null,
+  });
 }
 
 export async function readWorkingFile(repoPath: string, path: string): Promise<string> {

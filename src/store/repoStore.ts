@@ -8,6 +8,14 @@ import {
   getShowRemoteBranches,
   setShowRemoteBranches as persistShowRemoteBranches,
 } from "../lib/graphSettings";
+import {
+  type AuthorIdentity,
+  getActiveAuthorIdentityId,
+  getAuthorIdentities,
+  makeAuthorIdentity,
+  saveAuthorIdentities,
+  setActiveAuthorIdentityId,
+} from "../lib/authorIdentities";
 import { isConflicted } from "../lib/conflicts";
 import {
   type AheadBehind,
@@ -156,8 +164,13 @@ interface RepoState {
   tabs: RepoTab[];
   activeRepoPath: string | null;
   showRemoteBranches: boolean;
+  authorIdentities: AuthorIdentity[];
+  activeAuthorIdentityId: string | null;
 
   setShowRemoteBranches: (value: boolean) => void;
+  addAuthorIdentity: (name: string, email: string) => void;
+  removeAuthorIdentity: (id: string) => void;
+  setActiveAuthorIdentity: (id: string | null) => void;
   setFileWatchEnabled: (value: boolean) => void;
   loadTabDataFor: (repoPath: string) => Promise<void>;
   loadWorkingStatusFor: (repoPath: string) => Promise<void>;
@@ -438,10 +451,23 @@ export const useRepoStore = create<RepoState>((set, get) => {
     }
   }
 
+  const initialAuthorIdentities = getAuthorIdentities();
+  const storedActiveAuthorIdentityId = getActiveAuthorIdentityId();
+  const activeAuthorIdentityId =
+    storedActiveAuthorIdentityId &&
+    initialAuthorIdentities.some((i) => i.id === storedActiveAuthorIdentityId)
+      ? storedActiveAuthorIdentityId
+      : (initialAuthorIdentities[0]?.id ?? null);
+  if (activeAuthorIdentityId !== storedActiveAuthorIdentityId) {
+    setActiveAuthorIdentityId(activeAuthorIdentityId);
+  }
+
   return {
     tabs: [],
     activeRepoPath: null,
     showRemoteBranches: getShowRemoteBranches(),
+    authorIdentities: initialAuthorIdentities,
+    activeAuthorIdentityId,
 
     // Global (not per-tab): reloads every open tab quietly, so the graphs
     // swap to the new ref set in place instead of blanking behind a
@@ -449,6 +475,36 @@ export const useRepoStore = create<RepoState>((set, get) => {
     setShowRemoteBranches: (value: boolean) => {
       persistShowRemoteBranches(value);
       set({ showRemoteBranches: value });
+    },
+
+    addAuthorIdentity: (name: string, email: string) => {
+      const trimmedName = name.trim();
+      const trimmedEmail = email.trim();
+      if (!trimmedName || !trimmedEmail) return;
+      const identity = makeAuthorIdentity(trimmedName, trimmedEmail);
+      set((state) => {
+        const authorIdentities = [...state.authorIdentities, identity];
+        saveAuthorIdentities(authorIdentities);
+        setActiveAuthorIdentityId(identity.id);
+        return { authorIdentities, activeAuthorIdentityId: identity.id };
+      });
+    },
+
+    removeAuthorIdentity: (id: string) => {
+      set((state) => {
+        const authorIdentities = state.authorIdentities.filter((i) => i.id !== id);
+        saveAuthorIdentities(authorIdentities);
+        const nextActiveId =
+          state.activeAuthorIdentityId === id ? (authorIdentities[0]?.id ?? null) : state.activeAuthorIdentityId;
+        setActiveAuthorIdentityId(nextActiveId);
+        return { authorIdentities, activeAuthorIdentityId: nextActiveId };
+      });
+    },
+
+    setActiveAuthorIdentity: (id: string | null) => {
+      const validId = id && get().authorIdentities.some((i) => i.id === id) ? id : null;
+      setActiveAuthorIdentityId(validId);
+      set({ activeAuthorIdentityId: validId });
     },
 
     // Applies immediately to whatever's active, rather than waiting for the
@@ -777,8 +833,11 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const message = tab?.commitMessage.trim();
       if (!message) return;
       const amend = tab?.amend ?? false;
+      const activeIdentity = get().authorIdentities.find(
+        (i) => i.id === get().activeAuthorIdentityId,
+      );
       const ok = await runAction(activeRepoPath, amend ? "Amend commit" : "Commit", () =>
-        commitChanges(activeRepoPath, message, amend),
+        commitChanges(activeRepoPath, message, amend, activeIdentity ?? null),
       );
       if (ok) updateTab(activeRepoPath, { commitMessage: "", amend: false });
     },
@@ -1057,7 +1116,12 @@ export const useRepoStore = create<RepoState>((set, get) => {
     doAmendCommitMessage: async (sha: string, newMessage: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, "Amend commit", () => amendCommitMessage(activeRepoPath, sha, newMessage));
+      const activeIdentity = get().authorIdentities.find(
+        (i) => i.id === get().activeAuthorIdentityId,
+      );
+      await runAction(activeRepoPath, "Amend commit", () =>
+        amendCommitMessage(activeRepoPath, sha, newMessage, activeIdentity ?? null),
+      );
     },
 
     doResetToCommit: async (sha: string, mode: ResetMode) => {

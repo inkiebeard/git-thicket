@@ -56,7 +56,14 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     String(getBackgroundFetchIntervalSec()),
   );
   const [fileWatchEnabled, setFileWatchEnabledState] = useState(getFileWatchEnabled);
+  const [identityName, setIdentityName] = useState("");
+  const [identityEmail, setIdentityEmail] = useState("");
   const setFileWatchEnabled = useRepoStore((s) => s.setFileWatchEnabled);
+  const authorIdentities = useRepoStore((s) => s.authorIdentities);
+  const activeAuthorIdentityId = useRepoStore((s) => s.activeAuthorIdentityId);
+  const addAuthorIdentity = useRepoStore((s) => s.addAuthorIdentity);
+  const removeAuthorIdentity = useRepoStore((s) => s.removeAuthorIdentity);
+  const setActiveAuthorIdentity = useRepoStore((s) => s.setActiveAuthorIdentity);
 
   function clearRecentRepos() {
     localStorage.removeItem(RECENT_REPOS_KEY);
@@ -81,6 +88,14 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     setFetchIntervalInput(String(seconds));
     setBackgroundFetchIntervalSec(seconds);
   }
+
+  function handleAddIdentity() {
+    addAuthorIdentity(identityName, identityEmail);
+    setIdentityName("");
+    setIdentityEmail("");
+  }
+
+  const canAddIdentity = identityName.trim().length > 0 && identityEmail.trim().length > 0;
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -148,6 +163,57 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             <span>Pane widths, column widths/order, and terminal height</span>
             <button className="btn-secondary" onClick={() => setConfirmResetLayout(true)}>
               Reset saved layout…
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="settings-section-title">Commit identities</div>
+          <div className="settings-identity-list">
+            {authorIdentities.length === 0 ? (
+              <div className="settings-identity-empty">
+                No saved identities. Commits currently use git config defaults.
+              </div>
+            ) : (
+              authorIdentities.map((identity) => (
+                <div className="settings-identity-row" key={identity.id}>
+                  <label className="settings-identity-main">
+                    <input
+                      type="radio"
+                      name="active-author-identity"
+                      checked={activeAuthorIdentityId === identity.id}
+                      onChange={() => setActiveAuthorIdentity(identity.id)}
+                    />
+                    <span className="settings-identity-text">
+                      <span className="settings-identity-name">{identity.name}</span>
+                      <span className="settings-identity-email">{identity.email}</span>
+                    </span>
+                  </label>
+                  <button
+                    className="btn-secondary"
+                    onClick={() => removeAuthorIdentity(identity.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="settings-identity-add">
+            <input
+              className="modal-input"
+              placeholder="Name"
+              value={identityName}
+              onChange={(e) => setIdentityName(e.target.value)}
+            />
+            <input
+              className="modal-input"
+              placeholder="Email"
+              value={identityEmail}
+              onChange={(e) => setIdentityEmail(e.target.value)}
+            />
+            <button className="btn-secondary" disabled={!canAddIdentity} onClick={handleAddIdentity}>
+              Add identity
             </button>
           </div>
         </div>

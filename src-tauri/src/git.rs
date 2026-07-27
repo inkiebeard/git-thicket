@@ -231,6 +231,36 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+fn apply_commit_identity_env(cmd: &mut Command, author_name: &Option<String>, author_email: &Option<String>) {
+    if let (Some(name), Some(email)) = (author_name.as_ref(), author_email.as_ref()) {
+        if !name.trim().is_empty() && !email.trim().is_empty() {
+            cmd.env("GIT_AUTHOR_NAME", name);
+            cmd.env("GIT_AUTHOR_EMAIL", email);
+            // Keep author and committer aligned when explicitly switching
+            // identities in the UI.
+            cmd.env("GIT_COMMITTER_NAME", name);
+            cmd.env("GIT_COMMITTER_EMAIL", email);
+        }
+    }
+}
+
+fn run_git_commit(
+    repo_path: &str,
+    args: &[&str],
+    author_name: &Option<String>,
+    author_email: &Option<String>,
+) -> Result<String, String> {
+    let mut cmd = git_command(repo_path, args);
+    apply_commit_identity_env(&mut cmd, author_name, author_email);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run git: {e}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 // Every command below hands its actual work to this, via
 // `tauri::async_runtime::spawn_blocking`, rather than running it directly in
 // the `#[tauri::command(async)]` function body. A command fn that isn't
@@ -1086,7 +1116,13 @@ pub async fn revert_commit(repo_path: String, sha: String) -> Result<String, Str
 /// Amends the commit message of a specific commit. Only works if the commit
 /// is HEAD (the current commit). For other commits, use rebase.
 #[tauri::command(async)]
-pub async fn amend_commit_message(repo_path: String, sha: String, new_message: String) -> Result<String, String> {
+pub async fn amend_commit_message(
+    repo_path: String,
+    sha: String,
+    new_message: String,
+    author_name: Option<String>,
+    author_email: Option<String>,
+) -> Result<String, String> {
     run_blocking(move || {
         // Verify this is HEAD
         let _head = run_git(&repo_path, &["rev-parse", "HEAD"])?
@@ -1103,7 +1139,12 @@ pub async fn amend_commit_message(repo_path: String, sha: String, new_message: S
             return Err("Cannot amend: only HEAD (current commit) can be amended. Use interactive rebase for other commits.".to_string());
         }
 
-        run_git(&repo_path, &["commit", "--amend", "-m", &new_message])
+        run_git_commit(
+            &repo_path,
+            &["commit", "--amend", "--reset-author", "-m", &new_message],
+            &author_name,
+            &author_email,
+        )
     })
     .await
 }
@@ -1339,12 +1380,28 @@ pub async fn unstage_all(repo_path: String) -> Result<String, String> {
 }
 
 #[tauri::command(async)]
-pub async fn commit(repo_path: String, message: String, amend: bool) -> Result<String, String> {
+pub async fn commit(
+    repo_path: String,
+    message: String,
+    amend: bool,
+    author_name: Option<String>,
+    author_email: Option<String>,
+) -> Result<String, String> {
     run_blocking(move || {
         if amend {
-            run_git(&repo_path, &["commit", "--amend", "-m", &message])
+            run_git_commit(
+                &repo_path,
+                &["commit", "--amend", "--reset-author", "-m", &message],
+                &author_name,
+                &author_email,
+            )
         } else {
-            run_git(&repo_path, &["commit", "-m", &message])
+            run_git_commit(
+                &repo_path,
+                &["commit", "-m", &message],
+                &author_name,
+                &author_email,
+            )
         }
     })
     .await
