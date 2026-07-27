@@ -582,3 +582,7 @@ export async function createPullRequest(
 ): Promise<string> {
   return invoke<string>("create_pull_request", { repoPath, currentBranch, targetBranch, title, description, draft });
 }
+
+export async function getPullRequestTemplate(repoPath: string): Promise<string> {
+  return invoke<string>("get_pull_request_template", { repoPath });
+}

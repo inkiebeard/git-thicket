@@ -1,29 +1,58 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getPullRequestTemplate } from "../api/git";
 import { ModalOverlay } from "./ModalOverlay";
 
 interface CreatePullRequestDialogProps {
+  repoPath: string;
   currentBranch: string;
-  targetBranch: string;
+  defaultTargetBranch: string;
+  defaultTitle: string;
+  availableTargetBranches: string[];
   onCancel: () => void;
-  onConfirm: (title: string, description: string, draft: boolean) => void;
+  onConfirm: (targetBranch: string, title: string, description: string, draft: boolean) => void;
 }
 
 export function CreatePullRequestDialog({
+  repoPath,
   currentBranch,
-  targetBranch,
+  defaultTargetBranch,
+  defaultTitle,
+  availableTargetBranches,
   onCancel,
   onConfirm,
 }: CreatePullRequestDialogProps) {
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(defaultTitle);
   const [description, setDescription] = useState("");
   const [draft, setDraft] = useState(false);
+  const [targetBranch, setTargetBranch] = useState(defaultTargetBranch);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPullRequestTemplate(repoPath)
+      .then((template) => {
+        if (cancelled) return;
+        if (!template.trim()) return;
+        // Only prefill if user hasn't typed anything yet.
+        setDescription((existing) => (existing.trim().length > 0 ? existing : template));
+      })
+      .catch(() => {
+        // Template loading is best-effort; dialog still works without one.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath]);
 
   const handleConfirm = () => {
     if (!title.trim()) {
       alert("PR title is required");
       return;
     }
-    onConfirm(title, description, draft);
+    if (!targetBranch.trim()) {
+      alert("Target branch is required");
+      return;
+    }
+    onConfirm(targetBranch, title, description, draft);
   };
 
   return (
@@ -41,12 +70,17 @@ export function CreatePullRequestDialog({
         </label>
         <label className="modal-label">
           To Branch
-          <input
-            type="text"
+          <select
             value={targetBranch}
-            disabled
+            onChange={(e) => setTargetBranch(e.target.value)}
             className="modal-input"
-          />
+          >
+            {availableTargetBranches.map((branch) => (
+              <option key={branch} value={branch}>
+                {branch}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="modal-label">
           Title *

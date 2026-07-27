@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Toast } from "../store/repoStore";
-import { ErrorDetailModal } from "./ErrorDetailModal";
+import { NotificationDetailModal } from "./NotificationDetailModal";
 import "./ToastContainer.css";
 
 interface ToastContainerProps {
@@ -32,7 +32,7 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
         ))}
       </div>
       {expandedToast && (
-        <ErrorDetailModal toast={expandedToast} onClose={() => setExpandedToastId(null)} />
+        <NotificationDetailModal toast={expandedToast} onClose={() => setExpandedToastId(null)} />
       )}
     </>
   );

@@ -2,13 +2,14 @@ import { useState } from "react";
 import type { Toast } from "../store/repoStore";
 import { ModalOverlay } from "./ModalOverlay";
 
-interface ErrorDetailModalProps {
+interface NotificationDetailModalProps {
   toast: Toast;
   onClose: () => void;
 }
 
-export function ErrorDetailModal({ toast, onClose }: ErrorDetailModalProps) {
+export function NotificationDetailModal({ toast, onClose }: NotificationDetailModalProps) {
   const [copied, setCopied] = useState(false);
+  const title = toast.kind === "success" ? `${toast.action} succeeded` : `${toast.action} failed`;
 
   async function copy() {
     await navigator.clipboard.writeText(toast.text);
@@ -19,7 +20,7 @@ export function ErrorDetailModal({ toast, onClose }: ErrorDetailModalProps) {
   return (
     <ModalOverlay onClose={onClose}>
       <div className="modal modal-wide">
-        <div className="modal-title">{toast.action} failed</div>
+        <div className="modal-title">{title}</div>
         <pre className="modal-log">{toast.text}</pre>
         <div className="modal-actions">
           <button className="btn-secondary" onClick={copy}>

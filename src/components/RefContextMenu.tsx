@@ -33,6 +33,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
 
   const activeTab = useActiveTab();
   const currentBranch = activeTab?.branch;
+  const commits = activeTab?.commits ?? [];
   const workingStatus = activeTab?.workingStatus ?? [];
   const hasUncommittedChanges = workingStatus.some(
     (f) => f.indexStatus !== "none" || f.worktreeStatus !== "none",
@@ -43,6 +44,46 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   );
   const worktreePath =
     target.kind === "branch" ? worktreeBranches.get(target.name) : undefined;
+  const refs = activeTab?.refs ?? [];
+
+  const localBranchNames = Array.from(
+    new Set(
+      refs
+        .filter((r) => r.kind === "branch" || r.kind === "head")
+        .map((r) => r.name),
+    ),
+  );
+  const remoteBranchNames = Array.from(
+    new Set(
+      refs
+        .filter((r) => r.kind === "remote-branch")
+        .map((r) => splitRemoteRef(r.name).branch),
+    ),
+  );
+
+  const sourceBranch =
+    target.kind === "remote-branch"
+      ? splitRemoteRef(target.name).branch
+      : target.name;
+
+  const availableTargetBranches = Array.from(
+    new Set([...localBranchNames, ...remoteBranchNames]),
+  ).filter((b) => b && b !== sourceBranch);
+
+  function defaultTargetBranchForPr(): string {
+    const preferred = ["main", "master"];
+    for (const candidate of preferred) {
+      if (candidate !== sourceBranch && availableTargetBranches.includes(candidate)) {
+        return candidate;
+      }
+    }
+    if (currentBranch && currentBranch !== sourceBranch) return currentBranch;
+    return availableTargetBranches[0] ?? sourceBranch;
+  }
+
+  const defaultPrTargetBranch = defaultTargetBranchForPr();
+  const sourceCommitSubject = commits.find((c) => c.hash === target.hash)?.subject?.trim() ?? "";
+  const defaultPrTitle = sourceCommitSubject || `Merge ${sourceBranch} into ${defaultPrTargetBranch}`;
 
   const [promptKind, setPromptKind] = useState<PromptKind | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -94,11 +135,13 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
       disabled: !currentBranch,
       onSelect: () => setConfirmRebaseToRef(true),
     });
-    if (target.kind === "branch") {
+    if (target.kind === "branch" || target.kind === "head") {
       items.push({
         label: "Create pull request…",
         onSelect: () => setShowCreatePR(true),
       });
+    }
+    if (target.kind === "branch") {
       items.push({
         label: worktreePath ? "Delete (checked out in another worktree)" : "Delete",
         danger: true,
@@ -262,20 +305,16 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
           }}
         />
       )}
-      {showCreatePR && (target.kind === "branch" || target.kind === "remote-branch") && currentBranch && (
+      {showCreatePR && (target.kind === "branch" || target.kind === "head" || target.kind === "remote-branch") && (
         <CreatePullRequestDialog
-          currentBranch={currentBranch}
-          targetBranch={
-            target.kind === "remote-branch"
-              ? splitRemoteRef(target.name).branch
-              : target.name
-          }
+          repoPath={activeTab?.repoPath ?? ""}
+          currentBranch={sourceBranch}
+          defaultTargetBranch={defaultPrTargetBranch}
+          defaultTitle={defaultPrTitle}
+          availableTargetBranches={availableTargetBranches.length > 0 ? availableTargetBranches : [defaultPrTargetBranch]}
           onCancel={() => setShowCreatePR(false)}
-          onConfirm={(title, description, draft) => {
-            const targetBranch = target.kind === "remote-branch"
-              ? splitRemoteRef(target.name).branch
-              : target.name;
-            doCreatePullRequest(currentBranch, targetBranch, title, description, draft);
+          onConfirm={(targetBranch, title, description, draft) => {
+            doCreatePullRequest(sourceBranch, targetBranch, title, description, draft);
             setShowCreatePR(false);
             onClose();
           }}

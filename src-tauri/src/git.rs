@@ -1551,6 +1551,73 @@ pub async fn get_file_diff(repo_path: String, sha: String, file_path: String) ->
     .await
 }
 
+fn read_pr_template_file(repo_path: &str, relative_path: &str) -> Option<String> {
+    let path = std::path::Path::new(repo_path).join(relative_path);
+    let bytes = std::fs::read(path).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+fn find_pr_template(repo_path: &str) -> Option<String> {
+    // GitHub-supported defaults, checked in precedence order.
+    let direct_candidates = [
+        ".github/pull_request_template.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        "pull_request_template.md",
+        "docs/pull_request_template.md",
+    ];
+
+    for candidate in direct_candidates {
+        if let Some(content) = read_pr_template_file(repo_path, candidate) {
+            if !content.trim().is_empty() {
+                return Some(content);
+            }
+        }
+    }
+
+    // Also support template directories by taking the first markdown file
+    // alphabetically for deterministic behavior.
+    let dir_candidates = [".github/PULL_REQUEST_TEMPLATE", "docs/PULL_REQUEST_TEMPLATE"];
+    for dir in dir_candidates {
+        let full_dir = std::path::Path::new(repo_path).join(dir);
+        let read_dir = match std::fs::read_dir(full_dir) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let mut names: Vec<String> = read_dir
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| {
+                let file_type = entry.file_type().ok()?;
+                if !file_type.is_file() {
+                    return None;
+                }
+                let name = entry.file_name().to_string_lossy().to_string();
+                let lower = name.to_ascii_lowercase();
+                if lower.ends_with(".md") || lower.ends_with(".txt") {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        names.sort();
+        for name in names {
+            let relative_path = format!("{dir}/{name}");
+            if let Some(content) = read_pr_template_file(repo_path, &relative_path) {
+                if !content.trim().is_empty() {
+                    return Some(content);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[tauri::command(async)]
+pub async fn get_pull_request_template(repo_path: String) -> Result<String, String> {
+    run_blocking(move || Ok(find_pr_template(&repo_path).unwrap_or_default())).await
+}
+
 /// Creates a pull request for the given branch using GitHub CLI (gh).
 /// Automatically pushes the branch if it hasn't been pushed yet.
 #[tauri::command(async)]
