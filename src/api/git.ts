@@ -144,6 +144,14 @@ export async function getFileDiff(
   return invoke<string>("get_file_diff", { repoPath, sha, filePath });
 }
 
+/** Fetches a blob's full text via `git show <spec>` — `spec` is a git object
+ * specifier like `HEAD:path`, `<sha>:path`, or `:path` (index/staged
+ * version). Used to feed a whole file to the syntax highlighter so it can
+ * tokenize multi-line constructs correctly, not just a diff's changed lines. */
+export async function getBlobContent(repoPath: string, spec: string): Promise<string> {
+  return invoke<string>("get_blob_content", { repoPath, spec });
+}
+
 export interface CommitDetail {
   hash: string;
   authorName: string;

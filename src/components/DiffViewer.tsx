@@ -1,14 +1,49 @@
 import { useEffect, useState } from "react";
-import { getFileDiff, streamWorkingFileDiff } from "../api/git";
+import { getBlobContent, getFileDiff, readWorkingFile, streamWorkingFileDiff } from "../api/git";
 import {
   parseDiff,
   toSplitRows,
   type DiffHunk,
   type DiffLine,
 } from "../lib/diffParser";
+import { languageForPath, tokenizeLines, type HighlightedToken } from "../lib/syntaxHighlight";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { MinusIcon, PlusIcon, TrashIcon } from "./icons";
+
+// A hunk only carries the changed lines, so a token whose highlighting
+// depends on context outside the hunk (a block comment opened three lines
+// above it, say) would render wrong if we tokenized each hunk in isolation.
+// Instead each line looks up its pre-tokenized position in the *whole*
+// old/new file text: "remove" and "context" lines (context is identical on
+// both sides) read from the old file, "add" lines from the new file.
+function tokensForLine(
+  line: DiffLine,
+  oldLines: HighlightedToken[][] | null,
+  newLines: HighlightedToken[][] | null,
+): HighlightedToken[] | null {
+  if (line.type === "remove") {
+    return line.oldLine != null ? (oldLines?.[line.oldLine - 1] ?? null) : null;
+  }
+  return line.newLine != null ? (newLines?.[line.newLine - 1] ?? null) : null;
+}
+
+function LineContent({ line, tokens }: { line: DiffLine; tokens: HighlightedToken[] | null }) {
+  if (!tokens) return <span className="diff-line-content">{line.content}</span>;
+  return (
+    <span className="diff-line-content">
+      {tokens.map((t, i) =>
+        t.className ? (
+          <span key={i} className={t.className}>
+            {t.text}
+          </span>
+        ) : (
+          t.text
+        ),
+      )}
+    </span>
+  );
+}
 
 type ViewMode = "unified" | "split";
 
@@ -19,7 +54,13 @@ function loadViewMode(): ViewMode {
   return stored === "split" ? "split" : "unified";
 }
 
-function UnifiedHunk({ hunk }: { hunk: DiffHunk }) {
+interface HunkProps {
+  hunk: DiffHunk;
+  oldLines: HighlightedToken[][] | null;
+  newLines: HighlightedToken[][] | null;
+}
+
+function UnifiedHunk({ hunk, oldLines, newLines }: HunkProps) {
   return (
     <div className="diff-hunk-lines">
       {hunk.lines.map((line, lineIdx) => (
@@ -29,14 +70,24 @@ function UnifiedHunk({ hunk }: { hunk: DiffHunk }) {
           <span className="diff-line-marker">
             {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}
           </span>
-          <span className="diff-line-content">{line.content}</span>
+          <LineContent line={line} tokens={tokensForLine(line, oldLines, newLines)} />
         </div>
       ))}
     </div>
   );
 }
 
-function SplitSide({ line, marker }: { line: DiffLine | null; marker: string }) {
+function SplitSide({
+  line,
+  marker,
+  oldLines,
+  newLines,
+}: {
+  line: DiffLine | null;
+  marker: string;
+  oldLines: HighlightedToken[][] | null;
+  newLines: HighlightedToken[][] | null;
+}) {
   if (!line) {
     return <div className="diff-split-side diff-line-empty" />;
   }
@@ -44,19 +95,19 @@ function SplitSide({ line, marker }: { line: DiffLine | null; marker: string }) 
     <div className={`diff-split-side diff-line-${line.type}`}>
       <span className="diff-line-num">{line.oldLine ?? line.newLine ?? ""}</span>
       <span className="diff-line-marker">{marker}</span>
-      <span className="diff-line-content">{line.content}</span>
+      <LineContent line={line} tokens={tokensForLine(line, oldLines, newLines)} />
     </div>
   );
 }
 
-function SplitHunk({ hunk }: { hunk: DiffHunk }) {
+function SplitHunk({ hunk, oldLines, newLines }: HunkProps) {
   const rows = toSplitRows(hunk.lines);
   return (
     <div className="diff-hunk-lines diff-hunk-split">
       {rows.map((row, idx) => (
         <div className="diff-split-row" key={idx}>
-          <SplitSide line={row.left} marker="-" />
-          <SplitSide line={row.right} marker="+" />
+          <SplitSide line={row.left} marker="-" oldLines={oldLines} newLines={newLines} />
+          <SplitSide line={row.right} marker="+" oldLines={oldLines} newLines={newLines} />
         </div>
       ))}
     </div>
@@ -84,15 +135,77 @@ export function DiffViewer() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [pendingHunk, setPendingHunk] = useState<number | null>(null);
   const [discardHunkConfirm, setDiscardHunkConfirm] = useState<number | null>(null);
+  const [oldLines, setOldLines] = useState<HighlightedToken[][] | null>(null);
+  const [newLines, setNewLines] = useState<HighlightedToken[][] | null>(null);
 
+  const workingEntry = workingStatus.find((f) => f.path === selectedFilePath);
   const isUntracked =
-    viewingWorkingTree &&
-    !selectedFileStaged &&
-    workingStatus.find((f) => f.path === selectedFilePath)?.worktreeStatus === "untracked";
+    viewingWorkingTree && !selectedFileStaged && workingEntry?.worktreeStatus === "untracked";
+  const oldPath = workingEntry?.oldPath ?? selectedFilePath;
 
   useEffect(() => {
     localStorage.setItem(VIEW_MODE_KEY, viewMode);
   }, [viewMode]);
+
+  // Syntax highlighting needs each hunk's lines tokenized in the context of
+  // the whole file (see tokensForLine above), so this fetches the complete
+  // pre-/post-image blobs separately from the diff hunks themselves. A
+  // missing blob (new file, deleted file, root commit) is expected, not an
+  // error — it just means that side has no highlighted lines.
+  useEffect(() => {
+    const language = selectedFilePath ? languageForPath(selectedFilePath) : null;
+    if (!repoPath || !selectedFilePath || !language) {
+      setOldLines(null);
+      setNewLines(null);
+      return;
+    }
+    if (!viewingWorkingTree && !selectedSha) {
+      setOldLines(null);
+      setNewLines(null);
+      return;
+    }
+    let cancelled = false;
+    const localRepoPath = repoPath;
+    const localFilePath = selectedFilePath;
+    const localOldPath = oldPath ?? selectedFilePath;
+
+    async function run() {
+      let oldContentPromise: Promise<string>;
+      let newContentPromise: Promise<string>;
+
+      if (!viewingWorkingTree) {
+        oldContentPromise = getBlobContent(localRepoPath, `${selectedSha}^:${localOldPath}`).catch(() => "");
+        newContentPromise = getBlobContent(localRepoPath, `${selectedSha}:${localFilePath}`).catch(() => "");
+      } else if (selectedFileStaged) {
+        oldContentPromise = getBlobContent(localRepoPath, `HEAD:${localOldPath}`).catch(() => "");
+        newContentPromise = getBlobContent(localRepoPath, `:${localFilePath}`).catch(() => "");
+      } else {
+        oldContentPromise = isUntracked
+          ? Promise.resolve("")
+          : getBlobContent(localRepoPath, `:${localOldPath}`).catch(() => "");
+        newContentPromise = readWorkingFile(localRepoPath, localFilePath).catch(() => "");
+      }
+
+      const [oldContent, newContent] = await Promise.all([oldContentPromise, newContentPromise]);
+      if (cancelled) return;
+      setOldLines(tokenizeLines(oldContent, language));
+      setNewLines(tokenizeLines(newContent, language));
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    repoPath,
+    selectedSha,
+    selectedFilePath,
+    viewingWorkingTree,
+    selectedFileStaged,
+    refreshToken,
+    isUntracked,
+    oldPath,
+  ]);
 
   useEffect(() => {
     if (!repoPath || !selectedFilePath) {
@@ -264,9 +377,9 @@ export function DiffViewer() {
             </div>
             {!isCollapsed &&
               (viewMode === "unified" ? (
-                <UnifiedHunk hunk={hunk} />
+                <UnifiedHunk hunk={hunk} oldLines={oldLines} newLines={newLines} />
               ) : (
-                <SplitHunk hunk={hunk} />
+                <SplitHunk hunk={hunk} oldLines={oldLines} newLines={newLines} />
               ))}
           </div>
         );

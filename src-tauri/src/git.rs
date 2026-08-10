@@ -1717,6 +1717,20 @@ pub async fn get_file_diff(repo_path: String, sha: String, file_path: String) ->
     .await
 }
 
+/// Fetches a blob's full text content via `git show <spec>`, where `spec` is
+/// any git object specifier — `HEAD:path`, `<sha>:path`, or `:path` for the
+/// index (staged) version of a file. Used to get the complete pre-/post-image
+/// of a file for syntax highlighting, which needs the whole file tokenized as
+/// one unit (not just the diff hunks) so multi-line constructs like block
+/// comments or template literals highlight correctly across hunk boundaries.
+/// A spec with no matching object (e.g. `HEAD:path` for a file that doesn't
+/// exist yet) is a normal, expected failure — callers treat it as "no
+/// content" rather than a real error.
+#[tauri::command(async)]
+pub async fn get_blob_content(repo_path: String, spec: String) -> Result<String, String> {
+    run_blocking(move || run_git(&repo_path, &["show", &spec])).await
+}
+
 fn read_pr_template_file(repo_path: &str, relative_path: &str) -> Option<String> {
     let path = std::path::Path::new(repo_path).join(relative_path);
     let bytes = std::fs::read(path).ok()?;

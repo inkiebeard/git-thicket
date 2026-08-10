@@ -1866,6 +1866,99 @@ body {
   background: var(--bg-1);
 }
 
+/* Syntax highlighting (Prism token classes). More specific than the
+   .diff-line-add/-remove/-context text-color rules above, since those set
+   color on the line's own element — an element's own matched rule always
+   wins over an inherited value, so these apply on top of (rather than
+   fight with) the add/remove background tint. Unsupported languages just
+   never get "token" spans and keep the plain uniform coloring. */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: var(--text-2);
+  font-style: italic;
+}
+
+.token.string,
+.token.char,
+.token.attr-value,
+.token.template-string {
+  color: var(--success);
+}
+
+.token.keyword,
+.token.boolean,
+.token.null,
+.token.builtin,
+.token.import,
+.token.control,
+.token.module {
+  color: var(--accent);
+}
+
+.token.number {
+  color: var(--lane-2);
+}
+
+.token.function,
+.token.method,
+.token.decorator {
+  color: var(--lane-4);
+}
+
+.token.class-name,
+.token.tag {
+  color: var(--lane-5);
+}
+
+.token.property,
+.token.attr-name,
+.token.parameter {
+  color: var(--lane-7);
+}
+
+.token.regex {
+  color: var(--lane-9);
+}
+
+.token.operator,
+.token.punctuation {
+  color: var(--text-1);
+}
+
+/* Token types from non-code formats (CSS, YAML, TOML, Markdown, Bash, Docker)
+   that don't fit the code-oriented vocabulary above. */
+.token.selector,
+.token.atrule,
+.token.namespace {
+  color: var(--accent);
+}
+
+.token.important,
+.token.bold,
+.token.title {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.token.variable,
+.token.key,
+.token.url {
+  color: var(--lane-7);
+}
+
+.token.italic {
+  font-style: italic;
+}
+
+.token.code,
+.token.list,
+.token.hr,
+.token.blockquote {
+  color: var(--text-1);
+}
+
 /* Split diff view */
 
 .diff-hunk-split {

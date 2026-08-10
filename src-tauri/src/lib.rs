@@ -79,6 +79,7 @@ pub fn run() {
             git::commit,
             git::get_working_file_diff,
             git::stream_working_file_diff,
+            git::get_blob_content,
             git::get_pull_request_template,
             git::create_pull_request,
         ])
