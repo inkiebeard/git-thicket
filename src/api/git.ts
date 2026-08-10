@@ -483,6 +483,36 @@ export async function unstageAll(repoPath: string): Promise<string> {
   return invoke<string>("unstage_all", { repoPath });
 }
 
+export async function discardPath(repoPath: string, path: string): Promise<string> {
+  return invoke<string>("discard_path", { repoPath, path });
+}
+
+export async function discardPaths(repoPath: string, paths: string[]): Promise<string> {
+  return invoke<string>("discard_paths", { repoPath, paths });
+}
+
+export async function stageHunk(
+  repoPath: string,
+  path: string,
+  untracked: boolean,
+  hunkIndex: number,
+): Promise<string> {
+  return invoke<string>("stage_hunk", { repoPath, path, untracked, hunkIndex });
+}
+
+export async function unstageHunk(repoPath: string, path: string, hunkIndex: number): Promise<string> {
+  return invoke<string>("unstage_hunk", { repoPath, path, hunkIndex });
+}
+
+export async function discardHunk(
+  repoPath: string,
+  path: string,
+  untracked: boolean,
+  hunkIndex: number,
+): Promise<string> {
+  return invoke<string>("discard_hunk", { repoPath, path, untracked, hunkIndex });
+}
+
 export async function commitChanges(
   repoPath: string,
   message: string,

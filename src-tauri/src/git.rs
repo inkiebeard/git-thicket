@@ -261,6 +261,33 @@ fn run_git_commit(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Like `run_git`, but for commands that read a patch from stdin (`git
+/// apply`) rather than taking everything as argv — hunk staging needs to
+/// hand git a synthetic single-hunk patch it never wrote to disk.
+fn run_git_with_stdin(repo_path: &str, args: &[&str], input: &str) -> Result<String, String> {
+    use std::io::Write;
+
+    let mut cmd = git_command(repo_path, args);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("failed to run git: {e}"))?;
+
+    child
+        .stdin
+        .take()
+        .ok_or("failed to open git stdin")?
+        .write_all(input.as_bytes())
+        .map_err(|e| format!("failed to write patch to git stdin: {e}"))?;
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("failed to collect git output: {e}"))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 // Every command below hands its actual work to this, via
 // `tauri::async_runtime::spawn_blocking`, rather than running it directly in
 // the `#[tauri::command(async)]` function body. A command fn that isn't
@@ -1377,6 +1404,145 @@ pub async fn stage_all(repo_path: String) -> Result<String, String> {
 #[tauri::command(async)]
 pub async fn unstage_all(repo_path: String) -> Result<String, String> {
     run_blocking(move || run_git(&repo_path, &["restore", "--staged", "."])).await
+}
+
+/// Reverts a path to its HEAD state in both the index and working tree —
+/// "discard changes" treats a path's edits as one unit regardless of which
+/// side (staged or unstaged) they currently sit on. A path with no HEAD
+/// entry (a new/untracked file) has no tree version to restore, so it's
+/// unstaged (best-effort — it may not be staged at all) and deleted from
+/// disk instead. Note: for a staged rename, this restores the new path's
+/// HEAD content (if any) rather than recreating the old path.
+fn discard_one_path(repo_path: &str, path: &str) -> Result<(), String> {
+    let tracked_in_head = git_command(repo_path, &["cat-file", "-e", &format!("HEAD:{path}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if tracked_in_head {
+        run_git(repo_path, &["checkout", "HEAD", "--", path])?;
+    } else {
+        let _ = run_git(repo_path, &["reset", "--", path]);
+        let full_path = std::path::Path::new(repo_path).join(path);
+        if full_path.exists() {
+            std::fs::remove_file(&full_path).map_err(|e| format!("failed to delete {path}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub async fn discard_path(repo_path: String, path: String) -> Result<String, String> {
+    run_blocking(move || {
+        discard_one_path(&repo_path, &path)?;
+        Ok(String::new())
+    })
+    .await
+}
+
+#[tauri::command(async)]
+pub async fn discard_paths(repo_path: String, paths: Vec<String>) -> Result<String, String> {
+    run_blocking(move || {
+        for path in &paths {
+            discard_one_path(&repo_path, path)?;
+        }
+        Ok(String::new())
+    })
+    .await
+}
+
+/// Splits `git diff` output for a single file into its file-header preamble
+/// (`diff --git`/`index`/`---`/`+++` lines) and the raw text of each `@@ ...
+/// @@` hunk — building blocks for reconstructing a single-hunk patch that
+/// `git apply` will accept, since the diff viewer only knows a hunk by its
+/// index into the file's current diff.
+fn split_diff_into_hunks(diff_text: &str) -> (String, Vec<String>) {
+    let mut preamble_lines: Vec<&str> = Vec::new();
+    let mut hunks: Vec<Vec<&str>> = Vec::new();
+
+    for line in diff_text.lines() {
+        if line.starts_with("@@ ") || line == "@@" {
+            hunks.push(vec![line]);
+        } else if let Some(last) = hunks.last_mut() {
+            last.push(line);
+        } else {
+            preamble_lines.push(line);
+        }
+    }
+
+    let preamble = if preamble_lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", preamble_lines.join("\n"))
+    };
+    let hunk_texts = hunks
+        .into_iter()
+        .map(|lines| format!("{}\n", lines.join("\n")))
+        .collect();
+    (preamble, hunk_texts)
+}
+
+fn hunk_patch(repo_path: &str, diff_args: &[&str], hunk_index: usize) -> Result<String, String> {
+    let diff = run_git(repo_path, diff_args)?;
+    let (preamble, hunks) = split_diff_into_hunks(&diff);
+    let hunk = hunks
+        .get(hunk_index)
+        .ok_or_else(|| format!("hunk {hunk_index} not found (file diff may have changed)"))?;
+    Ok(format!("{preamble}{hunk}"))
+}
+
+fn hunk_patch_no_index(repo_path: &str, path: &str, hunk_index: usize) -> Result<String, String> {
+    let diff = run_git_diff_no_index(repo_path, &["diff", "--no-index", "--", "/dev/null", path])?;
+    let (preamble, hunks) = split_diff_into_hunks(&diff);
+    let hunk = hunks
+        .get(hunk_index)
+        .ok_or_else(|| format!("hunk {hunk_index} not found (file diff may have changed)"))?;
+    Ok(format!("{preamble}{hunk}"))
+}
+
+/// Stages a single hunk out of a file's unstaged diff by feeding git a
+/// synthetic patch containing just that hunk. The diff is re-fetched here
+/// (rather than trusting a patch sent from the frontend) so the hunk text
+/// always matches what's actually on disk right now.
+#[tauri::command(async)]
+pub async fn stage_hunk(repo_path: String, path: String, untracked: bool, hunk_index: usize) -> Result<String, String> {
+    run_blocking(move || {
+        let patch = if untracked {
+            hunk_patch_no_index(&repo_path, &path, hunk_index)?
+        } else {
+            hunk_patch(&repo_path, &["diff", "--", &path], hunk_index)?
+        };
+        run_git_with_stdin(&repo_path, &["apply", "--cached", "-"], &patch)
+    })
+    .await
+}
+
+/// Unstages a single hunk out of a file's staged diff by applying it in
+/// reverse against just the index.
+#[tauri::command(async)]
+pub async fn unstage_hunk(repo_path: String, path: String, hunk_index: usize) -> Result<String, String> {
+    run_blocking(move || {
+        let patch = hunk_patch(&repo_path, &["diff", "--cached", "--", &path], hunk_index)?;
+        run_git_with_stdin(&repo_path, &["apply", "--cached", "--reverse", "-"], &patch)
+    })
+    .await
+}
+
+/// Discards a single hunk out of a file's unstaged diff by applying it in
+/// reverse against the working tree only (index untouched).
+#[tauri::command(async)]
+pub async fn discard_hunk(repo_path: String, path: String, untracked: bool, hunk_index: usize) -> Result<String, String> {
+    run_blocking(move || {
+        let patch = if untracked {
+            hunk_patch_no_index(&repo_path, &path, hunk_index)?
+        } else {
+            hunk_patch(&repo_path, &["diff", "--", &path], hunk_index)?
+        };
+        run_git_with_stdin(&repo_path, &["apply", "--reverse", "-"], &patch)
+    })
+    .await
 }
 
 #[tauri::command(async)]

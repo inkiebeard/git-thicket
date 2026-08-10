@@ -69,3 +69,27 @@ export function EditIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function PlusIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M8 3v10M3 8h10" />
+    </svg>
+  );
+}
+
+export function MinusIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M3 8h10" />
+    </svg>
+  );
+}
+
+export function TrashIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M6.5 7.5v4M9.5 7.5v4M3.5 4.5l.6 8.4a1 1 0 0 0 1 .9h5.8a1 1 0 0 0 1-.9l.6-8.4" />
+    </svg>
+  );
+}

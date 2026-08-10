@@ -68,6 +68,11 @@ import {
   stageAll,
   stagePath,
   stagePaths,
+  discardPath,
+  discardPaths,
+  stageHunk as apiStageHunk,
+  unstageHunk as apiUnstageHunk,
+  discardHunk as apiDiscardHunk,
   stashDrop,
   stashList,
   stashPop,
@@ -199,6 +204,11 @@ interface RepoState {
   unstageFiles: (paths: string[]) => Promise<void>;
   stageAllFiles: () => Promise<void>;
   unstageAllFiles: () => Promise<void>;
+  discardFile: (path: string) => Promise<void>;
+  discardFiles: (paths: string[]) => Promise<void>;
+  stageHunk: (path: string, untracked: boolean, hunkIndex: number) => Promise<boolean>;
+  unstageHunk: (path: string, hunkIndex: number) => Promise<boolean>;
+  discardHunk: (path: string, untracked: boolean, hunkIndex: number) => Promise<boolean>;
   commitStagedChanges: () => Promise<void>;
 
   doFetch: () => Promise<void>;
@@ -440,14 +450,16 @@ export const useRepoStore = create<RepoState>((set, get) => {
   // Stage/unstage toggles happen a lot and shouldn't spam a toast or block
   // the UI with `busy` — just re-fetch status, and only surface a toast on
   // failure.
-  async function runQuiet(repoPath: string, label: string, action: () => Promise<string>) {
+  async function runQuiet(repoPath: string, label: string, action: () => Promise<string>): Promise<boolean> {
     try {
       await action();
       await loadWorkingStatus(repoPath);
+      return true;
     } catch (e) {
       updateTab(repoPath, {
         toasts: [{ id: toastId++, kind: "error", text: String(e), action: label }],
       });
+      return false;
     }
   }
 
@@ -824,6 +836,36 @@ export const useRepoStore = create<RepoState>((set, get) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
       await runQuiet(activeRepoPath, "Unstage all", () => unstageAll(activeRepoPath));
+    },
+
+    discardFile: async (path: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runQuiet(activeRepoPath, "Discard", () => discardPath(activeRepoPath, path));
+    },
+
+    discardFiles: async (paths: string[]) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath || paths.length === 0) return;
+      await runQuiet(activeRepoPath, "Discard selected", () => discardPaths(activeRepoPath, paths));
+    },
+
+    stageHunk: async (path: string, untracked: boolean, hunkIndex: number) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return false;
+      return runQuiet(activeRepoPath, "Stage hunk", () => apiStageHunk(activeRepoPath, path, untracked, hunkIndex));
+    },
+
+    unstageHunk: async (path: string, hunkIndex: number) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return false;
+      return runQuiet(activeRepoPath, "Unstage hunk", () => apiUnstageHunk(activeRepoPath, path, hunkIndex));
+    },
+
+    discardHunk: async (path: string, untracked: boolean, hunkIndex: number) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return false;
+      return runQuiet(activeRepoPath, "Discard hunk", () => apiDiscardHunk(activeRepoPath, path, untracked, hunkIndex));
     },
 
     commitStagedChanges: async () => {

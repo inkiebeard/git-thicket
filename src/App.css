@@ -1756,6 +1756,56 @@ body {
   width: 10px;
 }
 
+.diff-hunk-header-text {
+  flex: 1;
+}
+
+.diff-hunk-actions {
+  display: flex;
+  gap: 6px;
+  cursor: default;
+}
+
+.diff-hunk-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.diff-hunk-action-btn:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.diff-hunk-action-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.diff-hunk-action-btn-stage {
+  color: var(--success);
+}
+
+.diff-hunk-action-btn-stage:hover:not(:disabled) {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.diff-hunk-action-btn-danger {
+  color: var(--danger);
+}
+
+.diff-hunk-action-btn-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 /* Hunk lines scroll horizontally as one unit so a long line's background
    stretches all the way across instead of clipping at the pane's width. */
 .diff-hunk-lines {

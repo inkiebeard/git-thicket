@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FileChange, FileStatus, WorkingFileEntry } from "../api/git";
 import { isConflicted } from "../lib/conflicts";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ConflictResolutionDialog } from "./ConflictResolutionDialog";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 
@@ -128,14 +129,17 @@ function WorkingFileList() {
   const unstageFile = useRepoStore((s) => s.unstageFile);
   const stageFiles = useRepoStore((s) => s.stageFiles);
   const unstageFiles = useRepoStore((s) => s.unstageFiles);
+  const discardFile = useRepoStore((s) => s.discardFile);
+  const discardFiles = useRepoStore((s) => s.discardFiles);
   const selectWorkingFile = useRepoStore((s) => s.selectWorkingFile);
   const doStashPush = useRepoStore((s) => s.doStashPush);
 
   const [multi, setMulti] = useState<MultiSelect>(EMPTY_MULTI_SELECT);
   const [conflictPath, setConflictPath] = useState<string | null>(null);
-  const [fileMenu, setFileMenu] = useState<{ x: number; y: number; paths: string[] } | null>(
+  const [fileMenu, setFileMenu] = useState<{ x: number; y: number; paths: string[]; staged: boolean } | null>(
     null,
   );
+  const [discardConfirm, setDiscardConfirm] = useState<string[] | null>(null);
 
   const staged = workingStatus.filter((f) => f.indexStatus !== "none");
   const unstaged = workingStatus.filter((f) => f.worktreeStatus !== "none");
@@ -195,16 +199,25 @@ function WorkingFileList() {
     };
   }
 
-  // Right-clicking a row that's part of the current unstaged multi-selection
-  // acts on the whole selection; right-clicking any other row acts on just
-  // that file, same convention as handleToggleStage above.
-  function handleUnstagedContextMenu(path: string) {
+  // Right-clicking a row that's part of the current selection (within the
+  // same staged/unstaged section) acts on the whole selection; right-clicking
+  // any other row acts on just that file, same convention as
+  // handleToggleStage above.
+  function handleContextMenu(path: string, isStaged: boolean) {
     return (e: React.MouseEvent) => {
       e.preventDefault();
-      const inSelection = multi.staged === false && multi.paths.has(path) && multi.paths.size > 1;
+      const inSelection = multi.staged === isStaged && multi.paths.has(path) && multi.paths.size > 1;
       const paths = inSelection ? [...multi.paths] : [path];
-      setFileMenu({ x: e.clientX, y: e.clientY, paths });
+      setFileMenu({ x: e.clientX, y: e.clientY, paths, staged: isStaged });
     };
+  }
+
+  function handleDiscardConfirm() {
+    if (!discardConfirm) return;
+    if (discardConfirm.length > 1) discardFiles(discardConfirm);
+    else discardFile(discardConfirm[0]);
+    setDiscardConfirm(null);
+    setMulti(EMPTY_MULTI_SELECT);
   }
 
   const stagedSelection = multi.staged === true && multi.paths.size > 1 ? multi.paths : null;
@@ -247,6 +260,7 @@ function WorkingFileList() {
                   isConflicted(f) ? () => setConflictPath(f.path) : handleSelect(f.path, true, stagedPaths)
                 }
                 onToggleStage={handleToggleStage(f.path, true)}
+                onContextMenu={handleContextMenu(f.path, true)}
               />
             ))
           )}
@@ -289,7 +303,7 @@ function WorkingFileList() {
                     : handleSelect(f.path, false, unstagedPaths)
                 }
                 onToggleStage={handleToggleStage(f.path, false)}
-                onContextMenu={handleUnstagedContextMenu(f.path)}
+                onContextMenu={handleContextMenu(f.path, false)}
               />
             ))
           )}
@@ -309,19 +323,49 @@ function WorkingFileList() {
           onClose={() => setFileMenu(null)}
           items={
             [
+              ...(fileMenu.staged
+                ? []
+                : [
+                    {
+                      label:
+                        fileMenu.paths.length > 1
+                          ? `Stash selected (${fileMenu.paths.length})`
+                          : `Stash "${fileMenu.paths[0]}"`,
+                      onSelect: () => {
+                        doStashPush(undefined, fileMenu.paths);
+                        setMulti(EMPTY_MULTI_SELECT);
+                        setFileMenu(null);
+                      },
+                    },
+                    { separator: true } as const,
+                  ]),
               {
                 label:
                   fileMenu.paths.length > 1
-                    ? `Stash selected (${fileMenu.paths.length})`
-                    : `Stash "${fileMenu.paths[0]}"`,
+                    ? `Discard selected (${fileMenu.paths.length})`
+                    : `Discard changes in "${fileMenu.paths[0]}"`,
+                danger: true,
                 onSelect: () => {
-                  doStashPush(undefined, fileMenu.paths);
-                  setMulti(EMPTY_MULTI_SELECT);
+                  setDiscardConfirm(fileMenu.paths);
                   setFileMenu(null);
                 },
               },
             ] satisfies ContextMenuEntry[]
           }
+        />
+      )}
+      {discardConfirm && (
+        <ConfirmDialog
+          title="Discard changes"
+          message={
+            discardConfirm.length > 1
+              ? `Discard changes in ${discardConfirm.length} files? This cannot be undone.`
+              : `Discard changes in "${discardConfirm[0]}"? This cannot be undone.`
+          }
+          confirmLabel="Discard"
+          danger
+          onConfirm={handleDiscardConfirm}
+          onCancel={() => setDiscardConfirm(null)}
         />
       )}
     </div>
