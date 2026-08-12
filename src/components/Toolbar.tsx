@@ -1,11 +1,21 @@
-import { useState } from "react";
-import { stashShow, type StashEntry } from "../api/git";
+import { useRef, useState } from "react";
+import { stashShow, type RefInfo, type StashEntry } from "../api/git";
 import { isMacOS } from "../lib/platform";
 import { useClickOutside } from "../lib/useClickOutside";
 import { useActiveTab, useRepoStore } from "../store/repoStore";
 import { BranchManager } from "./BranchManager";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { FetchIcon, HamburgerIcon, PullIcon, PushIcon, StashIcon } from "./icons";
+import {
+  CheckoutIcon,
+  EyeIcon,
+  EyeOffIcon,
+  FetchIcon,
+  HamburgerIcon,
+  LocateIcon,
+  PullIcon,
+  PushIcon,
+  StashIcon,
+} from "./icons";
 import { PermissionsModal } from "./PermissionsModal";
 import { RemotesDialog } from "./RemotesDialog";
 import { SettingsDialog } from "./SettingsDialog";
@@ -211,6 +221,158 @@ function StashSplitButton({ hasChanges }: { hasChanges: boolean }) {
   );
 }
 
+function RefFilterMenuButton() {
+  const activeTab = useActiveTab();
+  const repoPath = activeTab?.repoPath ?? null;
+  const refs = activeTab?.refs ?? [];
+  const refFilter = activeTab?.refFilter ?? [];
+  const busy = activeTab?.busy ?? false;
+  const toggleRefFilter = useRepoStore((s) => s.toggleRefFilter);
+  const clearRefFilter = useRepoStore((s) => s.clearRefFilter);
+  const scrollToCommit = useRepoStore((s) => s.scrollToCommit);
+  const doCheckoutRef = useRepoStore((s) => s.doCheckoutRef);
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const ref = useClickOutside(() => setOpen(false));
+  const filterInputRef = useRef<HTMLInputElement>(null);
+
+  if (!repoPath) return null;
+
+  const query = filter.trim().toLowerCase();
+  const matchesFilter = (name: string) => !query || name.toLowerCase().includes(query);
+  const localBranches = refs.filter((r) => (r.kind === "branch" || r.kind === "head") && matchesFilter(r.name));
+  const remoteBranches = refs.filter((r) => r.kind === "remote-branch" && matchesFilter(r.name));
+  const tags = refs.filter((r) => r.kind === "tag" && matchesFilter(r.name));
+  const noMatches = localBranches.length === 0 && remoteBranches.length === 0 && tags.length === 0;
+
+  function renderRefItem(r: RefInfo) {
+    const filterActive = refFilter.length > 0;
+    const included = refFilter.includes(r.name);
+    // With no filter active every ref is "visible" (open eye, neutral
+    // color); once a filter exists, only refs actually in it stay visible
+    // (green) — the rest show the struck-through eye (amber) to signal
+    // they're the ones currently being hidden.
+    const visible = !filterActive || included;
+    const eyeTitle = !filterActive
+      ? `Click to show only ${r.name}`
+      : included
+        ? "In the filter — click to remove"
+        : "Hidden by filter — click to add";
+    return (
+      <div className="dropdown-item-row" key={r.name}>
+        <span className="ref-filter-item-name" title={r.name}>
+          {r.name}
+        </span>
+        <button
+          className="dropdown-item-small"
+          title="Scroll into view"
+          onClick={() => {
+            scrollToCommit(repoPath!, r.hash);
+            setOpen(false);
+          }}
+        >
+          <LocateIcon />
+        </button>
+        <button
+          className="dropdown-item-small"
+          title={r.kind === "head" ? "Already checked out" : `Checkout ${r.name}`}
+          disabled={r.kind === "head"}
+          onClick={() => {
+            doCheckoutRef(r.name);
+            setOpen(false);
+          }}
+        >
+          <CheckoutIcon />
+        </button>
+        <button
+          className={`dropdown-item-small${
+            filterActive ? (included ? " ref-eye-shown" : " ref-eye-hidden") : ""
+          }`}
+          title={eyeTitle}
+          onClick={() => toggleRefFilter(repoPath!, r.name)}
+        >
+          {visible ? <EyeIcon /> : <EyeOffIcon />}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="menu-anchor" ref={ref}>
+      <button
+        className="btn-toolbar"
+        disabled={busy}
+        onClick={() => setOpen((o) => !o)}
+        title="Filter the graph and commit list to selected refs"
+      >
+        Refs{refFilter.length > 0 ? ` (${refFilter.length})` : ""} ▾
+      </button>
+      {open && (
+        <div className="dropdown-menu">
+          <div className="search-input-wrap">
+            <input
+              ref={filterInputRef}
+              className="modal-input branch-filter-input"
+              placeholder="Filter refs…"
+              autoFocus
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  if (filter) setFilter("");
+                  else setOpen(false);
+                }
+              }}
+            />
+            {filter && (
+              <button
+                className="search-input-clear"
+                aria-label="Clear filter text"
+                title="Clear filter text"
+                onClick={() => {
+                  setFilter("");
+                  filterInputRef.current?.focus();
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+          {refFilter.length > 0 && (
+            <button
+              className="dropdown-item dropdown-item-muted"
+              onClick={() => clearRefFilter(repoPath!)}
+            >
+              Clear filter ({refFilter.length})
+            </button>
+          )}
+          <div className="ref-filter-list">
+          {noMatches && <div className="dropdown-empty">No refs match</div>}
+          {localBranches.length > 0 && (
+            <>
+              <div className="dropdown-section-label">Local</div>
+              {localBranches.map(renderRefItem)}
+            </>
+          )}
+          {remoteBranches.length > 0 && (
+            <>
+              <div className="dropdown-section-label">Remote</div>
+              {remoteBranches.map(renderRefItem)}
+            </>
+          )}
+          {tags.length > 0 && (
+            <>
+              <div className="dropdown-section-label">Tags</div>
+              {tags.map(renderRefItem)}
+            </>
+          )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdvancedMenuButton({ terminalOpen, onToggleTerminal }: ToolbarProps) {
   const busy = useActiveTab()?.busy ?? false;
   const showRemoteBranches = useRepoStore((s) => s.showRemoteBranches);
@@ -391,6 +553,7 @@ export function Toolbar({ terminalOpen, onToggleTerminal }: ToolbarProps) {
         </button>
         <PushSplitButton hasRemote={hasRemote} />
         <StashSplitButton hasChanges={hasChanges} />
+        <RefFilterMenuButton />
         <AdvancedMenuButton terminalOpen={terminalOpen} onToggleTerminal={onToggleTerminal} />
       </div>
     </div>

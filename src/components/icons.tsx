@@ -93,3 +93,42 @@ export function TrashIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function EyeIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" />
+      <circle cx="8" cy="8" r="2" />
+    </svg>
+  );
+}
+
+export function EyeOffIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" />
+      <circle cx="8" cy="8" r="2" />
+      <path d="M2.5 13.5l11-11" />
+    </svg>
+  );
+}
+
+/** Crosshair — "locate this in the graph". */
+export function LocateIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <circle cx="8" cy="8" r="2" />
+      <path d="M8 1.5v2.3M8 12.2v2.3M1.5 8h2.3M12.2 8h2.3" />
+    </svg>
+  );
+}
+
+/** Two branch lanes with an arrow crossing into the right one — "switch to
+ * this ref". */
+export function CheckoutIcon({ className }: IconProps) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M3 2.5v11M11.5 2.5v4M7 8l4.5 0M8.5 5.5L11.5 8l-3 2.5" />
+    </svg>
+  );
+}

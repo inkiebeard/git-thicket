@@ -523,6 +523,9 @@ body {
   border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dropdown-item-small:hover {
@@ -530,8 +533,84 @@ body {
   color: var(--text-0);
 }
 
+.dropdown-item-small:disabled {
+  color: var(--text-2);
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dropdown-item-small:disabled:hover {
+  background: none;
+}
+
 .dropdown-item-small-danger:hover {
   color: var(--danger);
+}
+
+/* Ref filter checklist's eye button: green once this ref is one of the
+   ones a filter keeps visible, amber when a filter is hiding it — neutral
+   (default .dropdown-item-small color) only when no filter is active at
+   all, since then every ref is visible and neither color would mean
+   anything yet. */
+.dropdown-item-small.ref-eye-shown {
+  color: var(--success);
+}
+
+.dropdown-item-small.ref-eye-shown:hover {
+  color: var(--success);
+  background: var(--bg-3);
+}
+
+.dropdown-item-small.ref-eye-hidden {
+  color: var(--lane-2);
+}
+
+.dropdown-item-small.ref-eye-hidden:hover {
+  color: var(--lane-2);
+  background: var(--bg-3);
+}
+
+/* Ref filter checklist row: name label + the three icon actions
+   (locate / checkout / eye) from RefFilterMenuButton. */
+.ref-filter-item-name {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ref filter checklist: its own scroll region nested inside the dropdown
+   (rather than making .dropdown-menu itself scroll) so the filter input and
+   "Clear filter" button stay pinned above it, matching .branch-list's
+   nested-scroll pattern in the Branches modal. */
+.ref-filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Flex items default to flex-shrink: 1 — without this, once the list's
+   natural height exceeds max-height above, flexbox squashes every row's
+   height to force them all to fit (instead of actually overflowing into
+   the scrollbar), garbling the text. Rows must hold their intrinsic size
+   and let the container scroll past it instead. */
+.ref-filter-list .dropdown-item,
+.ref-filter-list .dropdown-item-row,
+.ref-filter-list .dropdown-section-label {
+  flex-shrink: 0;
+}
+
+.dropdown-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  padding: 6px 8px 2px;
 }
 
 .dropdown-item-info {
@@ -708,6 +787,37 @@ body {
 .modal-input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* Wraps a .modal-input search/filter box so a clear (×) button can sit
+   inside its right edge instead of as a separate control next to it. */
+.search-input-wrap {
+  position: relative;
+}
+
+.search-input-wrap .modal-input {
+  width: 100%;
+  padding-right: 26px;
+}
+
+.search-input-clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.search-input-clear:hover {
+  color: var(--text-0);
+  background: var(--bg-3);
 }
 
 .conflict-modal {
@@ -934,6 +1044,23 @@ body {
   border-left: 2px solid var(--accent);
 }
 
+/* Landing on a row via "scroll into view" (Refs dropdown) gives no other
+   cue for which row it actually is among dozens of similar-looking ones —
+   this fades out on its own; duration must match the JS timeout that clears
+   flashHash in CommitGraph. */
+@keyframes ref-scroll-flash {
+  from {
+    background: rgba(91, 140, 255, 0.35);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.commit-row.ref-scroll-flash {
+  animation: ref-scroll-flash 2s ease-out;
+}
+
 .commit-graph-svg {
   flex-shrink: 0;
 }
@@ -1040,6 +1167,15 @@ body {
   border: 1px dotted var(--lane-2);
   color: var(--lane-2);
   font-style: italic;
+  cursor: default;
+}
+
+/* Click-to-filter selection state: the badge's own border turns solid
+   accent-blue, replacing whatever border color/style its kind normally has
+   (dashed local-only, italic remote-branch, etc.) — placed last so it wins
+   the cascade over every kind rule above regardless of source order. */
+.ref-badge.ref-filter-active {
+  border: 1px solid var(--accent);
 }
 
 .commit-subject {
@@ -1146,6 +1282,74 @@ body {
   height: 26px;
   width: max-content;
   min-width: 100%;
+}
+
+/* Active ref filter, shown above the column header — sticky above it
+   (z-index 3 vs. the header's 2) so it stays visible while scrolling. The
+   header's own sticky `top` is offset by this bar's height inline so the
+   two stack instead of overlapping. */
+.ref-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  height: 26px;
+  padding: 0 8px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.ref-filter-bar-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.ref-filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 1px 4px 1px 8px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #0c0f14;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ref-filter-chip-remove {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.ref-filter-clear {
+  font-size: 10px;
+  color: var(--text-2);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.ref-filter-clear:hover {
+  color: var(--text-0);
+  border-color: var(--text-2);
 }
 
 .commit-list-header-cell-wrap {
@@ -2149,6 +2353,13 @@ body {
   max-height: 220px;
   overflow-y: auto;
   margin-bottom: 4px;
+}
+
+/* See .ref-filter-list above: without this, a branch list long enough to
+   exceed max-height gets its rows squashed by flex-shrink instead of
+   actually scrolling. */
+.branch-list > * {
+  flex-shrink: 0;
 }
 
 .branch-list-empty {

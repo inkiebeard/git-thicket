@@ -94,6 +94,12 @@ export interface RepoTab {
   repoPath: string;
   commits: CommitInfo[];
   refs: RefInfo[];
+  /** Ref names (branch/tag/HEAD) to restrict the graph/log to; empty = show everything. */
+  refFilter: string[];
+  /** A pending "scroll the graph to this commit" request — nonce always
+   * increments so requesting the same hash twice in a row still re-fires
+   * the effect that consumes it in CommitGraph. */
+  scrollRequest: { hash: string; nonce: number } | null;
   branch: string | null;
   aheadBehind: AheadBehind | null;
   remotes: RemoteInfo[];
@@ -137,6 +143,8 @@ function makeTab(repoPath: string): RepoTab {
     repoPath,
     commits: [],
     refs: [],
+    refFilter: [],
+    scrollRequest: null,
     branch: null,
     aheadBehind: null,
     remotes: [],
@@ -173,6 +181,9 @@ interface RepoState {
   activeAuthorIdentityId: string | null;
 
   setShowRemoteBranches: (value: boolean) => void;
+  toggleRefFilter: (repoPath: string, refName: string) => void;
+  clearRefFilter: (repoPath: string) => void;
+  scrollToCommit: (repoPath: string, hash: string) => void;
   addAuthorIdentity: (name: string, email: string) => void;
   removeAuthorIdentity: (id: string) => void;
   setActiveAuthorIdentity: (id: string | null) => void;
@@ -323,9 +334,10 @@ export const useRepoStore = create<RepoState>((set, get) => {
 
   async function loadTabData(repoPath: string) {
     updateTab(repoPath, { loadingCommits: true, error: null });
+    const refFilter = get().tabs.find((t) => t.repoPath === repoPath)?.refFilter ?? [];
     try {
       const [commits, refs, branch, remotes, worktrees, stashes] = await Promise.all([
-        listCommits(repoPath, get().showRemoteBranches),
+        listCommits(repoPath, get().showRemoteBranches, undefined, undefined, refFilter),
         listRefs(repoPath),
         currentBranch(repoPath),
         listRemotes(repoPath).catch(() => []),
@@ -349,9 +361,10 @@ export const useRepoStore = create<RepoState>((set, get) => {
   // Only writes the fields that actually changed, so a no-news poll (the
   // common case) causes zero re-renders.
   async function loadTabDataQuiet(repoPath: string) {
+    const refFilter = get().tabs.find((t) => t.repoPath === repoPath)?.refFilter ?? [];
     try {
       const [commits, refs, branch, remotes, worktrees, stashes] = await Promise.all([
-        listCommits(repoPath, get().showRemoteBranches),
+        listCommits(repoPath, get().showRemoteBranches, undefined, undefined, refFilter),
         listRefs(repoPath),
         currentBranch(repoPath),
         listRemotes(repoPath).catch(() => []),
@@ -489,6 +502,33 @@ export const useRepoStore = create<RepoState>((set, get) => {
       set({ showRemoteBranches: value });
     },
 
+    // Per-tab (ref names are repo-specific), unlike showRemoteBranches. Reruns
+    // the commit query immediately with a visible loading state, since this is
+    // a deliberate user action rather than a background poll — resets
+    // pagination since "skip" is meaningless against a different commit set.
+    toggleRefFilter: (repoPath: string, refName: string) => {
+      const tab = get().tabs.find((t) => t.repoPath === repoPath);
+      if (!tab) return;
+      const next = tab.refFilter.includes(refName)
+        ? tab.refFilter.filter((r) => r !== refName)
+        : [...tab.refFilter, refName];
+      updateTab(repoPath, { refFilter: next, hasMoreCommits: true });
+      loadTabData(repoPath);
+    },
+
+    clearRefFilter: (repoPath: string) => {
+      updateTab(repoPath, { refFilter: [], hasMoreCommits: true });
+      loadTabData(repoPath);
+    },
+
+    // Nonce always increments (even for the same hash requested twice in a
+    // row) so CommitGraph's effect that consumes this always re-fires.
+    scrollToCommit: (repoPath: string, hash: string) => {
+      const tab = get().tabs.find((t) => t.repoPath === repoPath);
+      const nonce = (tab?.scrollRequest?.nonce ?? 0) + 1;
+      updateTab(repoPath, { scrollRequest: { hash, nonce } });
+    },
+
     addAuthorIdentity: (name: string, email: string) => {
       const trimmedName = name.trim();
       const trimmedEmail = email.trim();
@@ -617,7 +657,13 @@ export const useRepoStore = create<RepoState>((set, get) => {
       try {
         // Load the next page: skip by the number of commits already loaded
         const skip = tab.commits.length;
-        const moreCommits = await listCommits(activeRepoPath, get().showRemoteBranches, tab.commitsPageSize, skip);
+        const moreCommits = await listCommits(
+          activeRepoPath,
+          get().showRemoteBranches,
+          tab.commitsPageSize,
+          skip,
+          tab.refFilter,
+        );
         
         if (moreCommits.length < tab.commitsPageSize) {
           // Fewer commits than requested = we've reached the end

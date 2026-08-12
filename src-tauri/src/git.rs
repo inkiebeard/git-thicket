@@ -392,32 +392,51 @@ fn parse_shortstat(line: &str) -> (u32, u32) {
 /// format because `--shortstat` output isn't part of the `--format` string —
 /// it's an extra freeform summary line git appends per commit — so mixing
 /// them into one parse would be fragile.
+/// Builds the ref-selector arguments (`--branches --remotes --tags HEAD ...`
+/// or an explicit list of ref names) shared by `list_commits` and
+/// `get_commit_stats` so both walk the exact same commit set.
+fn ref_selector_args(
+    include_remotes: bool,
+    detached_heads: &[String],
+    ref_filter: &[String],
+) -> Vec<String> {
+    if !ref_filter.is_empty() {
+        return ref_filter.to_vec();
+    }
+    let mut args = vec!["--branches".to_string()];
+    if include_remotes {
+        args.push("--remotes".to_string());
+    }
+    args.push("--tags".to_string());
+    args.push("HEAD".to_string());
+    args.extend(detached_heads.iter().cloned());
+    args
+}
+
 fn get_commit_stats(
     repo_path: &str,
     include_remotes: bool,
     limit: u32,
     skip: u32,
     detached_heads: &[String],
+    ref_filter: &[String],
 ) -> Result<HashMap<String, (u32, u32)>, String> {
     let limit_arg = format!("-n{limit}");
     let skip_arg = format!("--skip={skip}");
-    let mut args = vec!["log", "--branches"];
-    if include_remotes {
-        args.push("--remotes");
-    }
-    args.push("--tags");
-    args.push("HEAD");
-    for h in detached_heads {
-        args.push(h.as_str());
+    let mut args = vec!["log".to_string()];
+    args.extend(ref_selector_args(include_remotes, detached_heads, ref_filter));
+    if !ref_filter.is_empty() {
+        args.push("--first-parent".to_string());
     }
     args.extend([
-        "--date-order",
-        "--format=%H",
-        "--shortstat",
-        &limit_arg,
-        &skip_arg,
+        "--date-order".to_string(),
+        "--format=%H".to_string(),
+        "--shortstat".to_string(),
+        limit_arg,
+        skip_arg,
     ]);
-    let output = run_git(&repo_path, &args)?;
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = run_git(&repo_path, &args_ref)?;
 
     let mut stats = HashMap::new();
     let mut current: Option<&str> = None;
@@ -449,8 +468,10 @@ pub async fn list_commits(
     include_remotes: bool,
     limit: u32,
     skip: u32,
+    ref_filter: Option<Vec<String>>,
 ) -> Result<Vec<CommitInfo>, String> {
     run_blocking(move || {
+        let ref_filter = ref_filter.unwrap_or_default();
         // Co-authors come from the `Co-authored-by` trailer via git's own
         // %(trailers:...) placeholder, not a full body fetch — cheap to include
         // per-commit since it's usually empty, unlike pulling %b for everyone.
@@ -462,25 +483,28 @@ pub async fn list_commits(
         let skip_arg = format!("--skip={skip}");
         let format_arg = format!("--format={format}");
         let detached_heads = detached_worktree_heads(&repo_path);
-        let mut args = vec!["log", "--branches"];
-        if include_remotes {
-            args.push("--remotes");
-        }
-        args.push("--tags");
-        args.push("HEAD");
-        for h in &detached_heads {
-            args.push(h.as_str());
+        let mut args = vec!["log".to_string()];
+        args.extend(ref_selector_args(include_remotes, &detached_heads, &ref_filter));
+        // Filtering to specific refs implies "just these branches' own
+        // lineage" (see first_parent_only below) — --first-parent keeps git's
+        // own traversal in step with that, so a merge commit's history is
+        // walked through its mainline parent only, not down into whatever
+        // got merged in.
+        if !ref_filter.is_empty() {
+            args.push("--first-parent".to_string());
         }
         args.extend([
-            "--date-order",
-            format_arg.as_str(),
-            "--date=iso-strict",
-            &limit_arg,
-            &skip_arg,
+            "--date-order".to_string(),
+            format_arg,
+            "--date=iso-strict".to_string(),
+            limit_arg,
+            skip_arg,
         ]);
-        let output = run_git(&repo_path, &args)?;
+        let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = run_git(&repo_path, &args_ref)?;
+        let first_parent_only = !ref_filter.is_empty();
 
-        let stats = get_commit_stats(&repo_path, include_remotes, limit, skip, &detached_heads)
+        let stats = get_commit_stats(&repo_path, include_remotes, limit, skip, &detached_heads, &ref_filter)
             .unwrap_or_else(|err| {
                 eprintln!("[list_commits] stats failed: {}", err);
                 Default::default()
@@ -503,12 +527,21 @@ pub async fn list_commits(
                     .filter(|s| !s.is_empty())
                     .map(str::to_string)
                     .collect();
+                let mut parents: Vec<String> =
+                    fields[1].split_whitespace().map(str::to_string).collect();
+                // %P always reports every parent regardless of --first-parent
+                // above; the graph layout draws an edge for each one, so a
+                // second+ parent here would point at a merged-in commit that
+                // --first-parent deliberately excluded from this result set,
+                // leaving a dangling lane that never resolves. Truncating to
+                // the mainline parent keeps the graph a straight line through
+                // merges instead.
+                if first_parent_only && parents.len() > 1 {
+                    parents.truncate(1);
+                }
                 Some(CommitInfo {
                     hash,
-                    parents: fields[1]
-                        .split_whitespace()
-                        .map(str::to_string)
-                        .collect(),
+                    parents,
                     author: fields[2].to_string(),
                     date: fields[3].to_string(),
                     subject: fields[4].to_string(),

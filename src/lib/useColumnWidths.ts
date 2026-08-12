@@ -9,6 +9,7 @@ const MIN_WIDTH = 50;
 export function useColumnWidths<K extends string>(
   initial: Record<K, number>,
   storageKey: string,
+  minWidths: Partial<Record<K, number>> = {},
 ) {
   const [widths, setWidths] = useState<Record<K, number>>(() => {
     try {
@@ -26,17 +27,21 @@ export function useColumnWidths<K extends string>(
     localStorage.setItem(storageKey, JSON.stringify(widths));
   }, [widths, storageKey]);
 
+  function minFor(key: K) {
+    return minWidths[key] ?? MIN_WIDTH;
+  }
+
   function resize(key: K, deltaX: number) {
     setWidths((prev) => ({
       ...prev,
-      [key]: Math.max(MIN_WIDTH, prev[key] + deltaX),
+      [key]: Math.max(minFor(key), prev[key] + deltaX),
     }));
   }
 
   function setWidth(key: K, value: number) {
     setWidths((prev) => ({
       ...prev,
-      [key]: Math.max(MIN_WIDTH, value),
+      [key]: Math.max(minFor(key), value),
     }));
   }
 

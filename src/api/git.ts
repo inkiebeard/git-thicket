@@ -73,12 +73,14 @@ export async function listCommits(
   includeRemotes: boolean,
   limit = 500,
   skip = 0,
+  refFilter: string[] = [],
 ): Promise<CommitInfo[]> {
   const raw = await invoke<RawCommitInfo[]>("list_commits", {
     repoPath,
     includeRemotes,
     limit,
     skip,
+    refFilter: refFilter.length > 0 ? refFilter : null,
   });
   return raw.map((c) => ({
     hash: c.hash,

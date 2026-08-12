@@ -1,5 +1,13 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+} from "react";
 import { stashShow, type CommitInfo, type RefInfo, type StashEntry } from "../api/git";
 import { useColumnOrder } from "../lib/useColumnOrder";
 import { useColumnWidths } from "../lib/useColumnWidths";
@@ -30,8 +38,12 @@ const LANE_WIDTH = 16;
 const DOT_RADIUS = 4;
 const GRAPH_PADDING = 10;
 const GRAPH_COLUMN_MIN_WIDTH = 40;
+const REFS_COLUMN_MIN_WIDTH = 60;
 const REFS_AUTO_FIT_GAP = 4;
 const AUTO_FIT_PADDING = 12;
+// Matches .pane-divider's width — a column can't shrink past its own
+// resize handle without the handle overlapping the next column.
+const RESIZE_HANDLE_WIDTH = 5;
 
 type ColumnKey = "changes" | "message" | "date" | "author" | "sha";
 
@@ -51,6 +63,7 @@ const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   sha: 70,
 };
 const REFS_COLUMN_INITIAL_WIDTH = 150;
+const REF_FILTER_BAR_HEIGHT = 26;
 
 function laneColorVar(color: number) {
   return `var(--lane-${color})`;
@@ -103,12 +116,14 @@ function RefBadges({
   refs,
   allRefs,
   worktreeBranches,
+  refFilter,
   onRefContextMenu,
   onRefDoubleClick,
 }: {
   refs: RefInfo[];
   allRefs: RefInfo[];
   worktreeBranches: Map<string, string>;
+  refFilter: string[];
   onRefContextMenu: (e: React.MouseEvent, ref: RefInfo) => void;
   onRefDoubleClick: (ref: RefInfo) => void;
 }) {
@@ -130,6 +145,11 @@ function RefBadges({
         // in git.rs), not that we're on a branch called "HEAD".
         const isDetachedHead = r.kind === "head" && r.name === "HEAD";
         const worktreePath = r.kind === "branch" ? worktreeBranches.get(r.name) : undefined;
+        // Worktree-head badges are a client-only synthetic label (a
+        // directory name), not a valid git revision — never part of the
+        // filter set (only set via the ref's context menu or the Refs
+        // dropdown, neither of which offers a worktree-head badge).
+        const isFiltered = r.kind !== "worktree-head" && refFilter.includes(r.name);
         return (
           <span
             key={r.name}
@@ -139,7 +159,7 @@ function RefBadges({
                 : (r.kind === "branch" || r.kind === "head") && !r.upstream
                   ? " ref-local-only"
                   : ""
-            }${worktreePath ? " ref-worktree" : ""}`}
+            }${worktreePath ? " ref-worktree" : ""}${isFiltered ? " ref-filter-active" : ""}`}
             title={
               r.kind === "worktree-head"
                 ? `Detached worktree "${r.name}" — HEAD is here, not on any branch. This is that worktree's commit history, not a real branch.`
@@ -147,17 +167,19 @@ function RefBadges({
                   ? `Local branch "${r.name}" — checked out in another worktree at ${worktreePath}`
                   : isDetachedHead
                     ? "HEAD is detached here — not on any branch. Check out a branch to avoid losing this position when you move HEAD again."
-                    : r.kind === "tag"
-                      ? undefined
-                      : r.kind === "remote-branch"
-                        ? findLocalTrackingBranch(allRefs, r)
-                          ? `${r.name} — double-click to fast-forward, rebase, or reset the local branch`
-                          : `${r.name} on the remote — no local branch is on this commit; double-click to check it out`
-                        : r.kind === "branch"
-                          ? `Local branch "${r.name}" — double-click to check out${r.upstream ? `; upstream is ${r.upstream}` : ""}`
-                          : r.upstream
-                            ? `Local branch "${r.name}" — upstream is ${r.upstream}`
-                            : "local only, not published to a remote"
+                    : `${
+                        r.kind === "tag"
+                          ? `Tag "${r.name}"`
+                          : r.kind === "remote-branch"
+                            ? findLocalTrackingBranch(allRefs, r)
+                              ? `${r.name} — double-click to fast-forward, rebase, or reset the local branch`
+                              : `${r.name} on the remote — no local branch is on this commit; double-click to check it out`
+                            : r.kind === "branch"
+                              ? `Local branch "${r.name}" — double-click to check out${r.upstream ? `; upstream is ${r.upstream}` : ""}`
+                              : r.upstream
+                                ? `Local branch "${r.name}" — upstream is ${r.upstream}`
+                                : "local only, not published to a remote"
+                      }`
             }
             onContextMenu={(e) => {
               if (r.kind === "worktree-head") return;
@@ -418,6 +440,8 @@ export function CommitGraph() {
     activeTab?.repoPath ?? "",
   );
   const stashes = activeTab?.stashes ?? [];
+  const refFilter = activeTab?.refFilter ?? [];
+  const scrollRequest = activeTab?.scrollRequest ?? null;
   const selectedSha = activeTab?.selectedSha ?? null;
   const selectedShas = activeTab?.selectedShas ?? [];
   const loadingCommits = activeTab?.loadingCommits ?? false;
@@ -441,6 +465,8 @@ export function CommitGraph() {
   const doCompleteConflict = useRepoStore((s) => s.doCompleteConflict);
   const doAbortConflict = useRepoStore((s) => s.doAbortConflict);
   const doLoadMoreCommits = useRepoStore((s) => s.doLoadMoreCommits);
+  const toggleRefFilter = useRepoStore((s) => s.toggleRefFilter);
+  const clearRefFilter = useRepoStore((s) => s.clearRefFilter);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [refMenu, setRefMenu] = useState<RefMenuState | null>(null);
   const [workingTreeMenu, setWorkingTreeMenu] = useState<{ x: number; y: number } | null>(null);
@@ -460,6 +486,21 @@ export function CommitGraph() {
   const [dragKey, setDragKey] = useState<ColumnKey | null>(null);
   const [showChanges, setShowChanges] = usePersistedBoolean(true, "thicket:showChangeCounts");
 
+  // A column can be resized down to its own header label's natural width
+  // (plus its resize handle) but no further — otherwise the label just
+  // clips mid-character. Measured from the actually-rendered header cells
+  // (see the layout effect below) rather than guessed, so it stays correct
+  // if a label or font ever changes; these defaults hold until that first
+  // measurement lands.
+  const [refsMinWidth, setRefsMinWidth] = useState(REFS_COLUMN_MIN_WIDTH);
+  const [graphMinWidth, setGraphMinWidth] = useState(GRAPH_COLUMN_MIN_WIDTH);
+  const [dataMinWidths, setDataMinWidths] = useState<Record<ColumnKey, number>>(
+    () => Object.fromEntries(DEFAULT_COLUMN_ORDER.map((k) => [k, 50])) as Record<ColumnKey, number>,
+  );
+  const refsHeaderRef = useRef<HTMLDivElement | null>(null);
+  const graphHeaderRef = useRef<HTMLDivElement | null>(null);
+  const dataHeaderRefs = useRef<Partial<Record<ColumnKey, HTMLDivElement>>>({});
+
   // Column order is a personal reading-order preference shared across
   // repos; widths are repo-specific (different repos have very different
   // message/author/path lengths) — CommitGraph is remounted (via `key` in
@@ -468,12 +509,17 @@ export function CommitGraph() {
   const { widths: colWidths, resize: resizeCol, setWidth: setColWidth } = useColumnWidths(
     DEFAULT_COLUMN_WIDTHS,
     `thicket:commitColWidths2:${repoPath}`,
+    dataMinWidths,
   );
   const {
     widths: refsWidths,
     resize: resizeRefsCol,
     setWidth: setRefsColWidth,
-  } = useResizableWidths([REFS_COLUMN_INITIAL_WIDTH], `thicket:commitRefsColWidth:${repoPath}`, 60);
+  } = useResizableWidths(
+    [REFS_COLUMN_INITIAL_WIDTH],
+    `thicket:commitRefsColWidth:${repoPath}`,
+    refsMinWidth,
+  );
   const refsWidth = refsWidths[0];
 
   const detachedWorktreeRefs = useMemo(
@@ -499,8 +545,13 @@ export function CommitGraph() {
     if (changedFileCount > 0 && headHash) {
       base = withGhostCommit(base, headHash, "Uncommitted changes");
     }
+    // A stash isn't reachable from any ref — it's a snapshot off to the
+    // side, not part of the committed history the filter is narrowing down
+    // to — so its fork onto a side lane would just contradict the point of
+    // filtering to a specific ref's own lineage.
+    if (refFilter.length > 0) return base;
     return withStashNodes(base, stashes);
-  }, [commits, primaryBranchHash, changedFileCount, headHash, stashes]);
+  }, [commits, primaryBranchHash, changedFileCount, headHash, stashes, refFilter]);
   // Natural width the graph needs to show every lane unclipped — grows
   // unbounded with branch count, so it's also used as the auto-fit target
   // and as the initial value of the (separately capped) column width below.
@@ -515,11 +566,37 @@ export function CommitGraph() {
   } = useResizableWidths(
     [graphWidth],
     `thicket:commitGraphColWidth:${repoPath}`,
-    GRAPH_COLUMN_MIN_WIDTH,
+    graphMinWidth,
   );
   // A cap, not a fixed size: repos with few branches still render at their
   // natural (smaller) width instead of being padded out to a stale max.
   const graphColWidth = Math.min(graphColWidths[0], graphWidth);
+
+  // Header labels are static text, so their natural width only needs
+  // measuring once the header cells actually exist in the DOM (nodes.length
+  // flips from 0 to non-zero) — `scrollWidth` reports the unclipped content
+  // width even though the cell itself has `overflow: hidden`.
+  useLayoutEffect(() => {
+    if (nodes.length === 0) return;
+    const minFor = (el: HTMLElement | null | undefined) =>
+      el ? el.scrollWidth + RESIZE_HANDLE_WIDTH : null;
+    const measuredRefs = minFor(refsHeaderRef.current);
+    if (measuredRefs != null) setRefsMinWidth((prev) => Math.max(prev, measuredRefs));
+    const measuredGraph = minFor(graphHeaderRef.current);
+    if (measuredGraph != null) setGraphMinWidth((prev) => Math.max(prev, measuredGraph));
+    setDataMinWidths((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of DEFAULT_COLUMN_ORDER) {
+        const measured = minFor(dataHeaderRefs.current[key]);
+        if (measured != null && measured > next[key]) {
+          next[key] = measured;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [nodes.length]);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -528,6 +605,44 @@ export function CommitGraph() {
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
   });
+
+  // Once, right after the tab's first page of commits lands, center the
+  // view on the checked-out ref's row (or the ghost "uncommitted changes"
+  // row just above it) instead of leaving the scroll pinned to the very
+  // top — that top commit is whichever ref/filter is newest overall, which
+  // isn't necessarily where HEAD actually is if the checked-out branch is
+  // behind it.
+  const didInitialScroll = useRef(false);
+  useEffect(() => {
+    if (didInitialScroll.current || nodes.length === 0) return;
+    didInitialScroll.current = true;
+    const idx = nodes.findIndex((n) => n.isGhost || n.commit.hash === headHash);
+    if (idx !== -1) virtualizer.scrollToIndex(idx, { align: "center" });
+  }, [nodes, headHash, virtualizer]);
+
+  // User-triggered "scroll to this ref" (Refs toolbar dropdown) — the
+  // nonce lets the same hash be requested twice in a row and still scroll.
+  // Also briefly flashes the row: with dozens of same-looking commit rows,
+  // landing on one via scroll rather than a click gives no other cue for
+  // which row it actually is.
+  const lastScrollNonce = useRef<number | null>(null);
+  const [flashHash, setFlashHash] = useState<string | null>(null);
+  const flashTimeoutRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!scrollRequest || scrollRequest.nonce === lastScrollNonce.current) return;
+    lastScrollNonce.current = scrollRequest.nonce;
+    const idx = nodes.findIndex((n) => n.commit.hash === scrollRequest.hash);
+    if (idx === -1) return;
+    virtualizer.scrollToIndex(idx, { align: "center" });
+    if (flashTimeoutRef.current != null) window.clearTimeout(flashTimeoutRef.current);
+    setFlashHash(scrollRequest.hash);
+    flashTimeoutRef.current = window.setTimeout(() => setFlashHash(null), 2000);
+  }, [scrollRequest, nodes, virtualizer]);
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current != null) window.clearTimeout(flashTimeoutRef.current);
+    };
+  }, []);
 
   // Lazy load more commits when user scrolls near the bottom
   useEffect(() => {
@@ -678,20 +793,54 @@ export function CommitGraph() {
 
   return (
     <div className="commit-graph" ref={parentRef}>
+      {refFilter.length > 0 && (
+        <div className="ref-filter-bar">
+          <span className="ref-filter-bar-label">Filtered by:</span>
+          {refFilter.map((name) => (
+            <span key={name} className="ref-filter-chip">
+              {name}
+              <button
+                className="ref-filter-chip-remove"
+                onClick={() => toggleRefFilter(repoPath, name)}
+                aria-label={`Remove ${name} from filter`}
+                title={`Remove ${name} from filter`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <button className="ref-filter-clear" onClick={() => clearRefFilter(repoPath)}>
+            Clear filter
+          </button>
+        </div>
+      )}
       {nodes.length === 0 ? (
         <div className="empty-state">No commits to show</div>
       ) : (
         <>
-          <div className="commit-list-header">
+          <div
+            className="commit-list-header"
+            style={refFilter.length > 0 ? { top: REF_FILTER_BAR_HEIGHT } : undefined}
+          >
             <div className="commit-list-header-cell-wrap" style={{ width: refsWidth }}>
-              <div className="commit-list-header-cell commit-list-header-cell-fixed">Refs</div>
+              <div
+                className="commit-list-header-cell commit-list-header-cell-fixed"
+                ref={refsHeaderRef}
+              >
+                Refs
+              </div>
               <ResizeHandle
                 onDrag={(dx) => resizeRefsCol(0, dx)}
                 onDoubleClick={handleRefsColAutoFit}
               />
             </div>
             <div className="commit-list-header-cell-wrap" style={{ width: graphColWidth }}>
-              <div className="commit-list-header-cell commit-list-header-cell-fixed">Graph</div>
+              <div
+                className="commit-list-header-cell commit-list-header-cell-fixed"
+                ref={graphHeaderRef}
+              >
+                Graph
+              </div>
               <ResizeHandle
                 onDrag={(dx) => resizeGraphCol(0, dx)}
                 onDoubleClick={handleGraphColAutoFit}
@@ -705,6 +854,9 @@ export function CommitGraph() {
               >
                 <div
                   className="commit-list-header-cell"
+                  ref={(el) => {
+                    if (el) dataHeaderRefs.current[key] = el;
+                  }}
                   draggable
                   onDragStart={handleHeaderDragStart(key)}
                   onDragOver={handleHeaderDragOver}
@@ -817,12 +969,21 @@ export function CommitGraph() {
               }
 
               const commitRefs = refMap.get(node.commit.hash) ?? [];
+              // While a ref filter is active, only the selected refs' own
+              // badges are worth showing — every other ref still reachable
+              // through the mainline (e.g. main) would otherwise appear on
+              // every row and bury the ones actually being filtered by.
+              const badgeRefs =
+                refFilter.length > 0
+                  ? commitRefs.filter((r) => refFilter.includes(r.name))
+                  : commitRefs;
               const isSelected = node.commit.hash === selectedSha;
               const isInSelection = selectedShas.includes(node.commit.hash);
+              const isFlashing = node.commit.hash === flashHash;
               return (
                 <div
                   key={node.commit.hash}
-                  className={`commit-row${isSelected ? " selected" : ""}${isInSelection ? " multi-selected" : ""}`}
+                  className={`commit-row${isSelected ? " selected" : ""}${isInSelection ? " multi-selected" : ""}${isFlashing ? " ref-scroll-flash" : ""}`}
                   style={rowStyle}
                   onClick={(e) => handleCommitClick(node.commit.hash, e)}
                   onContextMenu={(e) => {
@@ -847,9 +1008,10 @@ export function CommitGraph() {
                 >
                   <div className="commit-refs-cell" style={{ width: refsWidth }}>
                     <RefBadges
-                      refs={commitRefs}
+                      refs={badgeRefs}
                       allRefs={refs}
                       worktreeBranches={worktreeBranches}
+                      refFilter={refFilter}
                       onRefContextMenu={(e, ref) =>
                         setRefMenu({ x: e.clientX, y: e.clientY, ref })
                       }

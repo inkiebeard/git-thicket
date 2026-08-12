@@ -31,7 +31,10 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const doRebaseBranch = useRepoStore((s) => s.doRebaseBranch);
   const doCreatePullRequest = useRepoStore((s) => s.doCreatePullRequest);
 
+  const toggleRefFilter = useRepoStore((s) => s.toggleRefFilter);
   const activeTab = useActiveTab();
+  const repoPath = activeTab?.repoPath ?? null;
+  const refFilter = activeTab?.refFilter ?? [];
   const currentBranch = activeTab?.branch;
   const commits = activeTab?.commits ?? [];
   const workingStatus = activeTab?.workingStatus ?? [];
@@ -113,6 +116,18 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   }
 
   const items: ContextMenuEntry[] = [];
+
+  if (repoPath) {
+    const isFiltered = refFilter.includes(target.name);
+    items.push({
+      label: isFiltered ? `Remove ${target.name} from filter` : `Filter by ${target.name}`,
+      onSelect: () => {
+        toggleRefFilter(repoPath, target.name);
+        onClose();
+      },
+    });
+    items.push({ separator: true });
+  }
 
   if (target.kind === "head" || target.kind === "branch") {
     if (target.kind === "branch") {
