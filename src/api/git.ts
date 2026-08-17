@@ -419,6 +419,10 @@ export async function fastForwardBranch(repoPath: string, targetRef: string): Pr
   return invoke<string>("fast_forward_branch", { repoPath, targetRef });
 }
 
+export async function mergeBranch(repoPath: string, targetRef: string): Promise<string> {
+  return invoke<string>("merge_branch", { repoPath, targetRef });
+}
+
 export async function rebaseBranch(repoPath: string, targetRef: string): Promise<string> {
   return invoke<string>("rebase_branch", { repoPath, targetRef });
 }

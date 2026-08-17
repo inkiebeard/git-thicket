@@ -140,6 +140,30 @@ fn git_command(repo_path: &str, args: &[&str]) -> Command {
     cmd
 }
 
+fn format_git_failure(args: &[&str], status_code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> String {
+    let stderr_text = String::from_utf8_lossy(stderr).trim().to_string();
+    let stdout_text = String::from_utf8_lossy(stdout).trim().to_string();
+
+    if !stderr_text.is_empty() && !stdout_text.is_empty() {
+        return format!("{}\n\nstdout:\n{}", stderr_text, stdout_text);
+    }
+    if !stderr_text.is_empty() {
+        return stderr_text;
+    }
+    if !stdout_text.is_empty() {
+        return stdout_text;
+    }
+
+    match status_code {
+        Some(code) => format!(
+            "git {} failed with exit code {} and produced no output",
+            args.join(" "),
+            code
+        ),
+        None => format!("git {} failed and produced no output", args.join(" ")),
+    }
+}
+
 // Network operations (fetch/pull/push/ls-remote) can still hang past
 // GIT_TERMINAL_PROMPT=0 — a stalled TCP connection or unresponsive SSH server
 // never prompts for anything, it just never returns. This is the backstop:
@@ -203,7 +227,7 @@ fn run_git_with_timeout(repo_path: &str, args: &[&str], timeout: Duration) -> Re
     let stderr = stderr_thread.join().unwrap_or_default();
 
     if !exit_status.success() {
-        return Err(String::from_utf8_lossy(&stderr).to_string());
+        return Err(format_git_failure(args, exit_status.code(), &stdout, &stderr));
     }
 
     Ok(String::from_utf8_lossy(&stdout).to_string())
@@ -224,7 +248,12 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
                 .output()
                 .map_err(|e| format!("failed to run git: {e}"))?;
             if !output.status.success() {
-                return Err(String::from_utf8_lossy(&output.stderr).to_string());
+                return Err(format_git_failure(
+                    args,
+                    output.status.code(),
+                    &output.stdout,
+                    &output.stderr,
+                ));
             }
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         }
@@ -256,7 +285,12 @@ fn run_git_commit(
         .output()
         .map_err(|e| format!("failed to run git: {e}"))?;
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        return Err(format_git_failure(
+            args,
+            output.status.code(),
+            &output.stdout,
+            &output.stderr,
+        ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -283,7 +317,12 @@ fn run_git_with_stdin(repo_path: &str, args: &[&str], input: &str) -> Result<Str
         .map_err(|e| format!("failed to collect git output: {e}"))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        return Err(format_git_failure(
+            args,
+            output.status.code(),
+            &output.stdout,
+            &output.stderr,
+        ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
@@ -320,7 +359,12 @@ fn run_git_diff_no_index(repo_path: &str, args: &[&str]) -> Result<String, Strin
 
     match output.status.code() {
         Some(0) | Some(1) => Ok(String::from_utf8_lossy(&output.stdout).to_string()),
-        _ => Err(String::from_utf8_lossy(&output.stderr).to_string()),
+        _ => Err(format_git_failure(
+            args,
+            output.status.code(),
+            &output.stdout,
+            &output.stderr,
+        )),
     }
 }
 
@@ -1216,6 +1260,12 @@ pub async fn amend_commit_message(
 #[tauri::command(async)]
 pub async fn fast_forward_branch(repo_path: String, target_ref: String) -> Result<String, String> {
     run_blocking(move || run_git(&repo_path, &["merge", "--ff-only", &target_ref])).await
+}
+
+/// Merges `target_ref` into the currently checked-out branch.
+#[tauri::command(async)]
+pub async fn merge_branch(repo_path: String, target_ref: String) -> Result<String, String> {
+    run_blocking(move || run_git(&repo_path, &["merge", &target_ref])).await
 }
 
 /// Rebases the currently checked-out branch onto `target_ref`.

@@ -54,6 +54,7 @@ import {
   listRemotes,
   listWorktrees,
   moveBranch,
+  mergeBranch,
   pull,
   push,
   pushTag,
@@ -248,6 +249,7 @@ interface RepoState {
   doAmendCommitMessage: (sha: string, newMessage: string) => Promise<void>;
   doResetToCommit: (sha: string, mode: ResetMode) => Promise<void>;
   doFastForwardBranch: (targetRef: string) => Promise<void>;
+  doMergeBranch: (targetRef: string) => Promise<void>;
   doRebaseBranch: (targetRef: string) => Promise<void>;
   doContinueRebase: () => Promise<void>;
   doAbortRebase: () => Promise<void>;
@@ -1224,6 +1226,12 @@ export const useRepoStore = create<RepoState>((set, get) => {
       await runAction(activeRepoPath, "Fast-forward", () =>
         fastForwardBranch(activeRepoPath, targetRef),
       );
+    },
+
+    doMergeBranch: async (targetRef: string) => {
+      const { activeRepoPath } = get();
+      if (!activeRepoPath) return;
+      await runAction(activeRepoPath, "Merge", () => mergeBranch(activeRepoPath, targetRef));
     },
 
     doRebaseBranch: async (targetRef: string) => {

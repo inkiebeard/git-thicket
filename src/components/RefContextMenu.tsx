@@ -29,6 +29,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const doDeleteTag = useRepoStore((s) => s.doDeleteTag);
   const doDeleteRemoteTag = useRepoStore((s) => s.doDeleteRemoteTag);
   const doRebaseBranch = useRepoStore((s) => s.doRebaseBranch);
+  const doMergeBranch = useRepoStore((s) => s.doMergeBranch);
   const doCreatePullRequest = useRepoStore((s) => s.doCreatePullRequest);
 
   const toggleRefFilter = useRepoStore((s) => s.toggleRefFilter);
@@ -93,11 +94,21 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const [confirmDeleteRemote, setConfirmDeleteRemote] = useState(false);
   const [confirmCheckout, setConfirmCheckout] = useState(false);
   const [confirmRebaseToRef, setConfirmRebaseToRef] = useState(false);
+  const [confirmMergeToRef, setConfirmMergeToRef] = useState(false);
   const [showCreatePR, setShowCreatePR] = useState(false);
 
   const dialogOpen =
-    promptKind !== null || confirmDelete || confirmDeleteRemote || confirmCheckout || confirmRebaseToRef || showCreatePR;
+    promptKind !== null ||
+    confirmDelete ||
+    confirmDeleteRemote ||
+    confirmCheckout ||
+    confirmRebaseToRef ||
+    confirmMergeToRef ||
+    showCreatePR;
   const firstRemote = remotes[0] ?? null;
+  const canMergeIntoCurrent =
+    !!currentBranch &&
+    !((target.kind === "branch" || target.kind === "head") && target.name === currentBranch);
 
   // `git checkout` only refuses when a changed file's content would actually
   // be overwritten — it carries forward unrelated uncommitted edits without
@@ -116,6 +127,19 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   }
 
   const items: ContextMenuEntry[] = [];
+
+  function addIntegrateActions(refName: string) {
+    items.push({
+      label: currentBranch ? `Merge ${refName} into ${currentBranch}` : "Merge into current branch",
+      disabled: !canMergeIntoCurrent,
+      onSelect: () => setConfirmMergeToRef(true),
+    });
+    items.push({
+      label: `Rebase current branch onto ${refName}`,
+      disabled: !currentBranch,
+      onSelect: () => setConfirmRebaseToRef(true),
+    });
+  }
 
   if (repoPath) {
     const isFiltered = refFilter.includes(target.name);
@@ -140,16 +164,12 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
       });
     }
     items.push({ label: "Copy ref name", onSelect: () => { copy(target.name); onClose(); } });
+    addIntegrateActions(target.name);
     items.push({ label: "Rename…", onSelect: () => setPromptKind("rename") });
     items.push({ label: "Set upstream…", onSelect: () => setPromptKind("set-upstream") });
     if (target.kind === "head" && firstRemote) {
       items.push({ label: "Push", onSelect: () => { doPush(null); onClose(); } });
     }
-    items.push({
-      label: `Rebase current branch onto ${target.name}`,
-      disabled: !currentBranch,
-      onSelect: () => setConfirmRebaseToRef(true),
-    });
     if (target.kind === "branch" || target.kind === "head") {
       items.push({
         label: "Create pull request…",
@@ -171,11 +191,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
     });
     const { branch } = splitRemoteRef(target.name);
     items.push({ label: "Copy ref name", onSelect: () => { copy(branch); onClose(); } });
-    items.push({
-      label: `Rebase current branch onto ${target.name}`,
-      disabled: !currentBranch,
-      onSelect: () => setConfirmRebaseToRef(true),
-    });
+    addIntegrateActions(target.name);
     items.push({
       label: "Create pull request…",
       onSelect: () => setShowCreatePR(true),
@@ -187,11 +203,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
     });
   } else if (target.kind === "tag") {
     items.push({ label: "Copy tag name", onSelect: () => { copy(target.name); onClose(); } });
-    items.push({
-      label: `Rebase current branch onto ${target.name}`,
-      disabled: !currentBranch,
-      onSelect: () => setConfirmRebaseToRef(true),
-    });
+    addIntegrateActions(target.name);
     if (firstRemote) {
       items.push({
         label: `Push tag to ${firstRemote}`,
@@ -316,6 +328,18 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
           onCancel={onClose}
           onConfirm={() => {
             doRebaseBranch(target.name);
+            onClose();
+          }}
+        />
+      )}
+      {confirmMergeToRef && (
+        <ConfirmDialog
+          title="Merge into current branch"
+          message={`Merge ${target.name} into ${currentBranch}?`}
+          confirmLabel="Merge"
+          onCancel={onClose}
+          onConfirm={() => {
+            doMergeBranch(target.name);
             onClose();
           }}
         />

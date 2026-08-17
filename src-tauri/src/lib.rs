@@ -59,6 +59,7 @@ pub fn run() {
             git::amend_commit_message,
             git::reset_to_commit,
             git::fast_forward_branch,
+            git::merge_branch,
             git::rebase_branch,
             git::rebase_continue,
             git::rebase_abort,
