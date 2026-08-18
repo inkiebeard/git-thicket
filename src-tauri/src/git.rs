@@ -1268,6 +1268,18 @@ pub async fn merge_branch(repo_path: String, target_ref: String) -> Result<Strin
     run_blocking(move || run_git(&repo_path, &["merge", &target_ref])).await
 }
 
+/// Continues an in-progress merge after conflicts have been resolved.
+#[tauri::command(async)]
+pub async fn merge_continue(repo_path: String) -> Result<String, String> {
+    run_blocking(move || run_git(&repo_path, &["merge", "--continue"])).await
+}
+
+/// Aborts an in-progress merge and restores the pre-merge state.
+#[tauri::command(async)]
+pub async fn merge_abort(repo_path: String) -> Result<String, String> {
+    run_blocking(move || run_git(&repo_path, &["merge", "--abort"])).await
+}
+
 /// Rebases the currently checked-out branch onto `target_ref`.
 #[tauri::command(async)]
 pub async fn rebase_branch(repo_path: String, target_ref: String) -> Result<String, String> {

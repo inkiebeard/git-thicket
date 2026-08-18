@@ -5,7 +5,7 @@
     "email": "aaron@inkiebeard.codes",
     "name": "Aaron Toomey"
   },
-  "version": "0.10.0",
+  "version": "0.10.1",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -55,6 +55,8 @@ import {
   listWorktrees,
   moveBranch,
   mergeBranch,
+  mergeContinue,
+  mergeAbort,
   pull,
   push,
   pushTag,
@@ -1231,7 +1233,25 @@ export const useRepoStore = create<RepoState>((set, get) => {
     doMergeBranch: async (targetRef: string) => {
       const { activeRepoPath } = get();
       if (!activeRepoPath) return;
-      await runAction(activeRepoPath, "Merge", () => mergeBranch(activeRepoPath, targetRef));
+
+      const success = await runAction(activeRepoPath, "Merge", () =>
+        mergeBranch(activeRepoPath, targetRef),
+      );
+
+      if (success) return;
+
+      await get().loadWorkingStatusFor(activeRepoPath);
+      const tab = get().tabs.find((t) => t.repoPath === activeRepoPath);
+      const conflicts = tab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
+
+      if (conflicts.length > 0) {
+        updateTab(activeRepoPath, {
+          mergeConflictInProgress: {
+            operation: "merge",
+            operationLabel: `merge ${targetRef}`,
+          },
+        });
+      }
     },
 
     doRebaseBranch: async (targetRef: string) => {
@@ -1362,6 +1382,19 @@ export const useRepoStore = create<RepoState>((set, get) => {
         if (success) {
           updateTab(activeRepoPath, { mergeConflictInProgress: undefined });
         }
+      } else if (conflict.operation === "merge") {
+        const success = await runAction(activeRepoPath, "Continue merge", () =>
+          mergeContinue(activeRepoPath),
+        );
+
+        if (success) {
+          const updatedTab = get().tabs.find((t) => t.repoPath === activeRepoPath);
+          const conflicts = updatedTab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
+
+          if (conflicts.length === 0) {
+            updateTab(activeRepoPath, { mergeConflictInProgress: undefined });
+          }
+        }
       } else if (conflict.operation === "rebase") {
         // Continue the rebase
         await get().doContinueRebase();
@@ -1381,6 +1414,12 @@ export const useRepoStore = create<RepoState>((set, get) => {
         const success = await runAction(activeRepoPath, "Abort stash pop", () =>
           resetToCommit(activeRepoPath, "HEAD", "hard"),
         );
+
+        if (success) {
+          updateTab(activeRepoPath, { mergeConflictInProgress: undefined });
+        }
+      } else if (conflict.operation === "merge") {
+        const success = await runAction(activeRepoPath, "Abort merge", () => mergeAbort(activeRepoPath));
 
         if (success) {
           updateTab(activeRepoPath, { mergeConflictInProgress: undefined });

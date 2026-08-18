@@ -423,6 +423,14 @@ export async function mergeBranch(repoPath: string, targetRef: string): Promise<
   return invoke<string>("merge_branch", { repoPath, targetRef });
 }
 
+export async function mergeContinue(repoPath: string): Promise<string> {
+  return invoke<string>("merge_continue", { repoPath });
+}
+
+export async function mergeAbort(repoPath: string): Promise<string> {
+  return invoke<string>("merge_abort", { repoPath });
+}
+
 export async function rebaseBranch(repoPath: string, targetRef: string): Promise<string> {
   return invoke<string>("rebase_branch", { repoPath, targetRef });
 }
