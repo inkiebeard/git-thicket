@@ -1071,6 +1071,7 @@ body {
 .commit-graph-cell {
   overflow: hidden;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 /* Refs get their own dedicated column, positioned before the graph — kept

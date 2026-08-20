@@ -251,6 +251,7 @@ interface RepoState {
   doAmendCommitMessage: (sha: string, newMessage: string) => Promise<void>;
   doResetToCommit: (sha: string, mode: ResetMode) => Promise<void>;
   doFastForwardBranch: (targetRef: string) => Promise<void>;
+  doMergeCurrentIntoRef: (targetRef: string) => Promise<void>;
   doMergeBranch: (targetRef: string) => Promise<void>;
   doRebaseBranch: (targetRef: string) => Promise<void>;
   doContinueRebase: () => Promise<void>;
@@ -1228,6 +1229,34 @@ export const useRepoStore = create<RepoState>((set, get) => {
       await runAction(activeRepoPath, "Fast-forward", () =>
         fastForwardBranch(activeRepoPath, targetRef),
       );
+    },
+
+    doMergeCurrentIntoRef: async (targetRef: string) => {
+      const { activeRepoPath, tabs } = get();
+      if (!activeRepoPath) return;
+      const activeTab = tabs.find((t) => t.repoPath === activeRepoPath);
+      const sourceBranch = activeTab?.branch;
+      if (!sourceBranch || sourceBranch === targetRef) return;
+
+      const success = await runAction(activeRepoPath, "Merge", async () => {
+        await checkoutRef(activeRepoPath, targetRef);
+        return mergeBranch(activeRepoPath, sourceBranch);
+      });
+
+      if (success) return;
+
+      await get().loadWorkingStatusFor(activeRepoPath);
+      const tab = get().tabs.find((t) => t.repoPath === activeRepoPath);
+      const conflicts = tab?.workingStatus.filter((f) => isConflicted(f)) ?? [];
+
+      if (conflicts.length > 0) {
+        updateTab(activeRepoPath, {
+          mergeConflictInProgress: {
+            operation: "merge",
+            operationLabel: `merge ${sourceBranch}`,
+          },
+        });
+      }
     },
 
     doMergeBranch: async (targetRef: string) => {

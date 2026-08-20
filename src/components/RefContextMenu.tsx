@@ -16,10 +16,11 @@ interface RefContextMenuProps {
   onClose: () => void;
 }
 
-type PromptKind = "rename" | "set-upstream";
+type PromptKind = "rename" | "set-upstream" | "create-branch";
 
 export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefContextMenuProps) {
   const doCheckoutRef = useRepoStore((s) => s.doCheckoutRef);
+  const doCreateBranch = useRepoStore((s) => s.doCreateBranch);
   const doRenameBranch = useRepoStore((s) => s.doRenameBranch);
   const doSetUpstream = useRepoStore((s) => s.doSetUpstream);
   const doDeleteBranch = useRepoStore((s) => s.doDeleteBranch);
@@ -29,6 +30,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const doDeleteTag = useRepoStore((s) => s.doDeleteTag);
   const doDeleteRemoteTag = useRepoStore((s) => s.doDeleteRemoteTag);
   const doRebaseBranch = useRepoStore((s) => s.doRebaseBranch);
+  const doMergeCurrentIntoRef = useRepoStore((s) => s.doMergeCurrentIntoRef);
   const doMergeBranch = useRepoStore((s) => s.doMergeBranch);
   const doCreatePullRequest = useRepoStore((s) => s.doCreatePullRequest);
 
@@ -94,6 +96,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
   const [confirmDeleteRemote, setConfirmDeleteRemote] = useState(false);
   const [confirmCheckout, setConfirmCheckout] = useState(false);
   const [confirmRebaseToRef, setConfirmRebaseToRef] = useState(false);
+  const [confirmMergeCurrentIntoRef, setConfirmMergeCurrentIntoRef] = useState(false);
   const [confirmMergeToRef, setConfirmMergeToRef] = useState(false);
   const [showCreatePR, setShowCreatePR] = useState(false);
 
@@ -103,12 +106,18 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
     confirmDeleteRemote ||
     confirmCheckout ||
     confirmRebaseToRef ||
+    confirmMergeCurrentIntoRef ||
     confirmMergeToRef ||
     showCreatePR;
   const firstRemote = remotes[0] ?? null;
   const canMergeIntoCurrent =
     !!currentBranch &&
     !((target.kind === "branch" || target.kind === "head") && target.name === currentBranch);
+  const canMergeCurrentIntoTarget =
+    !!currentBranch &&
+    (target.kind === "branch" || target.kind === "head") &&
+    target.name !== currentBranch &&
+    !worktreePath;
 
   // `git checkout` only refuses when a changed file's content would actually
   // be overwritten — it carries forward unrelated uncommitted edits without
@@ -128,7 +137,16 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
 
   const items: ContextMenuEntry[] = [];
 
-  function addIntegrateActions(refName: string) {
+  function addIntegrateActions(refName: string, allowMergeCurrentIntoTarget = false) {
+    if (allowMergeCurrentIntoTarget) {
+      items.push({
+        label: currentBranch
+          ? `Merge ${currentBranch} into ${refName}`
+          : "Merge current branch into selected ref",
+        disabled: !canMergeCurrentIntoTarget,
+        onSelect: () => setConfirmMergeCurrentIntoRef(true),
+      });
+    }
     items.push({
       label: currentBranch ? `Merge ${refName} into ${currentBranch}` : "Merge into current branch",
       disabled: !canMergeIntoCurrent,
@@ -163,8 +181,9 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
         onSelect: checkout,
       });
     }
+    items.push({ label: "Create branch here…", onSelect: () => setPromptKind("create-branch") });
     items.push({ label: "Copy ref name", onSelect: () => { copy(target.name); onClose(); } });
-    addIntegrateActions(target.name);
+    addIntegrateActions(target.name, true);
     items.push({ label: "Rename…", onSelect: () => setPromptKind("rename") });
     items.push({ label: "Set upstream…", onSelect: () => setPromptKind("set-upstream") });
     if (target.kind === "head" && firstRemote) {
@@ -189,6 +208,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
       label: "Checkout (create local branch)",
       onSelect: checkout,
     });
+    items.push({ label: "Create branch here…", onSelect: () => setPromptKind("create-branch") });
     const { branch } = splitRemoteRef(target.name);
     items.push({ label: "Copy ref name", onSelect: () => { copy(branch); onClose(); } });
     addIntegrateActions(target.name);
@@ -202,6 +222,7 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
       onSelect: () => setConfirmDeleteRemote(true),
     });
   } else if (target.kind === "tag") {
+    items.push({ label: "Create branch here…", onSelect: () => setPromptKind("create-branch") });
     items.push({ label: "Copy tag name", onSelect: () => { copy(target.name); onClose(); } });
     addIntegrateActions(target.name);
     if (firstRemote) {
@@ -251,6 +272,19 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
           onCancel={onClose}
           onConfirm={(upstream) => {
             doSetUpstream(target.name, upstream);
+            onClose();
+          }}
+        />
+      )}
+      {promptKind === "create-branch" && (
+        <PromptDialog
+          title={`Create branch from ${target.name}`}
+          label="Branch name"
+          confirmLabel="Create"
+          initialValue={target.kind === "remote-branch" ? splitRemoteRef(target.name).branch : ""}
+          onCancel={onClose}
+          onConfirm={(name) => {
+            doCreateBranch(name, target.name);
             onClose();
           }}
         />
@@ -340,6 +374,18 @@ export function RefContextMenu({ x, y, ref: target, remotes, onClose }: RefConte
           onCancel={onClose}
           onConfirm={() => {
             doMergeBranch(target.name);
+            onClose();
+          }}
+        />
+      )}
+      {confirmMergeCurrentIntoRef && (
+        <ConfirmDialog
+          title="Merge current branch into selected ref"
+          message={`Checkout ${target.name} and merge ${currentBranch} into it?`}
+          confirmLabel="Merge"
+          onCancel={onClose}
+          onConfirm={() => {
+            doMergeCurrentIntoRef(target.name);
             onClose();
           }}
         />

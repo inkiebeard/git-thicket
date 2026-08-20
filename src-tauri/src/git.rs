@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -554,7 +554,7 @@ pub async fn list_commits(
                 Default::default()
             });
 
-        let commits = output
+        let mut commits: Vec<CommitInfo> = output
             .split(RE)
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -571,18 +571,8 @@ pub async fn list_commits(
                     .filter(|s| !s.is_empty())
                     .map(str::to_string)
                     .collect();
-                let mut parents: Vec<String> =
+                let parents: Vec<String> =
                     fields[1].split_whitespace().map(str::to_string).collect();
-                // %P always reports every parent regardless of --first-parent
-                // above; the graph layout draws an edge for each one, so a
-                // second+ parent here would point at a merged-in commit that
-                // --first-parent deliberately excluded from this result set,
-                // leaving a dangling lane that never resolves. Truncating to
-                // the mainline parent keeps the graph a straight line through
-                // merges instead.
-                if first_parent_only && parents.len() > 1 {
-                    parents.truncate(1);
-                }
                 Some(CommitInfo {
                     hash,
                     parents,
@@ -595,6 +585,30 @@ pub async fn list_commits(
                 })
             })
             .collect();
+
+        // With a ref filter active, git traversal uses --first-parent to keep
+        // the walk scoped to each selected ref's own lineage. `%P` still lists
+        // all parents, though, so keep merge parents only when that parent
+        // commit is actually present in this filtered result set.
+        if first_parent_only {
+            let present: HashSet<String> = commits.iter().map(|c| c.hash.clone()).collect();
+            for commit in &mut commits {
+                if commit.parents.len() <= 1 {
+                    continue;
+                }
+                let first = commit.parents[0].clone();
+                let mut filtered = vec![first];
+                filtered.extend(
+                    commit
+                        .parents
+                        .iter()
+                        .skip(1)
+                        .filter(|p| present.contains(*p))
+                        .cloned(),
+                );
+                commit.parents = filtered;
+            }
+        }
 
         Ok(commits)
     })
@@ -1125,9 +1139,11 @@ pub async fn checkout_ref(repo_path: String, ref_name: String) -> Result<String,
     run_blocking(move || run_git(&repo_path, &["checkout", &ref_name])).await
 }
 
+/// Creates a new branch at `sha` and checks it out immediately.
+/// Equivalent to `git checkout -b <name> <sha>`.
 #[tauri::command(async)]
 pub async fn create_branch(repo_path: String, name: String, sha: String) -> Result<String, String> {
-    run_blocking(move || run_git(&repo_path, &["branch", &name, &sha])).await
+    run_blocking(move || run_git(&repo_path, &["checkout", "-b", &name, &sha])).await
 }
 
 #[tauri::command(async)]

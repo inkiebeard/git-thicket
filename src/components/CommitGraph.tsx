@@ -203,6 +203,21 @@ function RefBadges({
 
 function RowGraphic({ node }: { node: GraphNode }) {
   const midY = ROW_HEIGHT / 2;
+  // Compact, single-corner routing: lines stay mostly vertical with a
+  // slight rounded bend where they land, improving readability without
+  // increasing lane spacing.
+  function curvedEdgePath(fromLane: number, fromY: number, toLane: number, toY: number): string {
+    const x1 = laneX(fromLane);
+    const x2 = laneX(toLane);
+    if (x1 === x2) return `M ${x1} ${fromY} L ${x2} ${toY}`;
+
+    const dy = Math.abs(toY - fromY);
+    const controlInset = Math.max(3, Math.min(7, Math.floor(dy * 0.45)));
+    const startY = fromY + controlInset;
+    const endY = toY - Math.max(2, Math.floor(controlInset * 0.8));
+
+    return `M ${x1} ${fromY} L ${x1} ${startY} C ${x1} ${endY} ${x2} ${startY} ${x2} ${toY}`;
+  }
 
   return (
     <>
@@ -215,6 +230,7 @@ function RowGraphic({ node }: { node: GraphNode }) {
           y2={ROW_HEIGHT}
           stroke={laneColorVar(p.color)}
           strokeWidth={2}
+          strokeLinecap="round"
         />
       ))}
       {node.hasIncoming && (
@@ -225,25 +241,30 @@ function RowGraphic({ node }: { node: GraphNode }) {
           y2={midY}
           stroke={laneColorVar(node.color)}
           strokeWidth={2}
+          strokeLinecap="round"
           strokeDasharray={node.incomingDashed ? "3 3" : undefined}
         />
       )}
       {node.convergingLanes.map((c) => (
         <path
           key={`conv-${c.lane}`}
-          d={`M ${laneX(c.lane)} 0 L ${laneX(node.lane)} ${midY}`}
+          d={curvedEdgePath(c.lane, 0, node.lane, midY)}
           stroke={laneColorVar(c.color)}
           strokeWidth={2}
           fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       ))}
       {node.parentLanes.map((p) => (
         <path
           key={p.parentHash}
-          d={`M ${laneX(node.lane)} ${midY} L ${laneX(p.lane)} ${ROW_HEIGHT}`}
+          d={curvedEdgePath(node.lane, midY, p.lane, ROW_HEIGHT)}
           stroke={laneColorVar(p.color)}
           strokeWidth={2}
           fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
           strokeDasharray={p.dashed ? "3 3" : undefined}
         />
       ))}
